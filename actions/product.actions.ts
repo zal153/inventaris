@@ -4,15 +4,15 @@ import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import { productSchema } from "@/lib/validations";
 import type { ActionResponse, ProductWithRelations } from "@/types";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
 import { CATEGORY_PREFIX } from "@/lib/utils";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-// ── Get All Products ──────────────────────────────────
-export async function getProducts(): Promise<ProductWithRelations[]> {
-  try {
-    const products = await prisma.product.findMany({
+// Wrap product fetch with unstable_cache
+const getCachedProducts = unstable_cache(
+  async () => {
+    return prisma.product.findMany({
       where: {
         isActive: true,
       },
@@ -28,6 +28,15 @@ export async function getProducts(): Promise<ProductWithRelations[]> {
         namaBarang: "asc",
       },
     });
+  },
+  ["products"],
+  { tags: ["products"] }
+);
+
+// ── Get All Products ──────────────────────────────────
+export async function getProducts(): Promise<ProductWithRelations[]> {
+  try {
+    const products = await getCachedProducts();
     return products as unknown as ProductWithRelations[];
   } catch (error) {
     console.error("Error fetching products:", error);
@@ -194,6 +203,7 @@ export async function createProduct(
     });
 
     revalidatePath("/products");
+    revalidateTag("products");
     return {
       success: true,
       message: "Produk berhasil ditambahkan",
@@ -306,6 +316,7 @@ export async function updateProduct(
 
     revalidatePath("/products");
     revalidatePath(`/products/${id}`);
+    revalidateTag("products");
     return {
       success: true,
       message: "Produk berhasil diperbarui",
@@ -382,6 +393,7 @@ export async function deleteProduct(id: string): Promise<ActionResponse> {
     });
 
     revalidatePath("/products");
+    revalidateTag("products");
     return {
       success: true,
       message: "Produk berhasil dihapus",
@@ -475,6 +487,7 @@ export async function importProducts(productsList: any[]): Promise<ActionRespons
         },
       });
       revalidatePath("/products");
+      revalidateTag("products");
     }
 
     return {

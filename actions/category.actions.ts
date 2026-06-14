@@ -4,12 +4,12 @@ import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import { categorySchema } from "@/lib/validations";
 import type { ActionResponse } from "@/types";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
 
-// ── Get All Categories ────────────────────────────────
-export async function getCategories() {
-  try {
-    const categories = await prisma.category.findMany({
+// Wrap category fetch with unstable_cache
+const getCachedCategories = unstable_cache(
+  async () => {
+    return prisma.category.findMany({
       include: {
         _count: {
           select: { products: true },
@@ -19,7 +19,15 @@ export async function getCategories() {
         name: "asc",
       },
     });
-    return categories;
+  },
+  ["categories"],
+  { tags: ["categories"] }
+);
+
+// ── Get All Categories ────────────────────────────────
+export async function getCategories() {
+  try {
+    return await getCachedCategories();
   } catch (error) {
     console.error("Error fetching categories:", error);
     return [];
@@ -79,6 +87,7 @@ export async function createCategory(
     });
 
     revalidatePath("/categories");
+    revalidateTag("categories");
     return {
       success: true,
       message: "Kategori berhasil ditambahkan",
@@ -150,6 +159,7 @@ export async function updateCategory(
     });
 
     revalidatePath("/categories");
+    revalidateTag("categories");
     return {
       success: true,
       message: "Kategori berhasil diperbarui",
@@ -209,6 +219,7 @@ export async function deleteCategory(id: string): Promise<ActionResponse> {
     });
 
     revalidatePath("/categories");
+    revalidateTag("categories");
     return {
       success: true,
       message: "Kategori berhasil dihapus",

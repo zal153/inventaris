@@ -5,7 +5,7 @@ import { getSessionUser } from "@/lib/auth";
 import { stockOutSchema } from "@/lib/validations";
 import type { ActionResponse, StockOutWithRelations } from "@/types";
 import { generateKodeTransaksi } from "@/lib/utils";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 
 // ── Get All Stock Out Transactions ────────────────────
 export async function getStockOuts(filters?: {
@@ -170,6 +170,7 @@ export async function createStockOut(
     revalidatePath("/stock-out");
     revalidatePath("/products");
     revalidatePath("/dashboard");
+    revalidateTag("products");
     return {
       success: true,
       message: "Barang keluar berhasil dicatat",

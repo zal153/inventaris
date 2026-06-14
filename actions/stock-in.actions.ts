@@ -5,7 +5,7 @@ import { getSessionUser } from "@/lib/auth";
 import { stockInSchema } from "@/lib/validations";
 import type { ActionResponse, StockInWithRelations } from "@/types";
 import { generateKodeTransaksi } from "@/lib/utils";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 
 // ── Get All Stock In Transactions ─────────────────────
 export async function getStockIns(filters?: {
@@ -158,6 +158,7 @@ export async function createStockIn(
     revalidatePath("/stock-in");
     revalidatePath("/products");
     revalidatePath("/dashboard");
+    revalidateTag("products");
     return {
       success: true,
       message: "Barang masuk berhasil dicatat",
