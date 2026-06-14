@@ -7,9 +7,11 @@ import { formatRupiah, formatDate } from "@/lib/utils";
 import { exportToExcel, exportToPDF } from "@/lib/export";
 import type { StockOutWithRelations } from "@/types";
 import { ColumnDef } from "@tanstack/react-table";
-import { FileDown, FileSpreadsheet, Plus } from "lucide-react";
+import { FileDown, FileSpreadsheet, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { deleteStockOut } from "@/actions/stock-out.actions";
 
 interface StockOutListClientProps {
   stockOuts: StockOutWithRelations[];
@@ -18,6 +20,8 @@ interface StockOutListClientProps {
 export function StockOutListClient({ stockOuts }: StockOutListClientProps) {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
 
   // Filter stock-out transactions by date range
   const filteredStockOuts = stockOuts.filter((s) => {
@@ -78,6 +82,24 @@ export function StockOutListClient({ stockOuts }: StockOutListClientProps) {
     toast.success("PDF barang keluar berhasil diexport");
   };
 
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    setIsDeleting(true);
+    try {
+      const res = await deleteStockOut(deleteId);
+      if (res.success) {
+        toast.success(res.message);
+      } else {
+        toast.error(res.message);
+      }
+    } catch (err) {
+      toast.error("Terjadi kesalahan saat menghapus transaksi");
+    } finally {
+      setIsDeleting(false);
+      setDeleteId(null);
+    }
+  };
+
   const columns: ColumnDef<StockOutWithRelations>[] = [
     {
       accessorKey: "kodeTransaksi",
@@ -128,6 +150,19 @@ export function StockOutListClient({ stockOuts }: StockOutListClientProps) {
       accessorKey: "user.name",
       header: "Petugas",
       cell: ({ row }) => <span className="text-muted-foreground">{row.original.user.name}</span>,
+    },
+    {
+      id: "actions",
+      header: "Aksi",
+      cell: ({ row }) => (
+        <button
+          onClick={() => setDeleteId(row.original.id)}
+          className="rounded-lg p-1.5 hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition flex items-center justify-center"
+          title="Hapus Transaksi"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+      ),
     },
   ];
 
@@ -203,6 +238,19 @@ export function StockOutListClient({ stockOuts }: StockOutListClientProps) {
         searchKey="product.namaBarang"
         searchPlaceholder="Cari berdasarkan nama barang..."
         filterComponent={filterComponent}
+      />
+
+      {/* Confirm Delete Dialog */}
+      <ConfirmDialog
+        isOpen={!!deleteId}
+        onClose={() => setDeleteId(null)}
+        onConfirm={handleDelete}
+        title="Hapus Transaksi Barang Keluar?"
+        description="PENTING: Menghapus transaksi barang keluar ini akan mengembalikan stok barang terkait ke master gudang. Tindakan ini tidak dapat dibatalkan."
+        confirmLabel="Ya, Hapus"
+        cancelLabel="Batal"
+        isDestructive={true}
+        isLoading={isDeleting}
       />
     </div>
   );

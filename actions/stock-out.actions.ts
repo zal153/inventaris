@@ -183,3 +183,70 @@ export async function createStockOut(
     };
   }
 }
+
+// ── Delete Stock Out Transaction ──────────────────────
+export async function deleteStockOut(id: string): Promise<ActionResponse> {
+  const user = await getSessionUser();
+  if (!user) {
+    return { success: false, message: "Unauthorized" };
+  }
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Get Stock Out detail
+      const stockOut = await tx.stockOut.findUnique({
+        where: { id },
+        include: {
+          product: {
+            select: { namaBarang: true },
+          },
+        },
+      });
+
+      if (!stockOut) {
+        throw new Error("Transaksi barang keluar tidak ditemukan");
+      }
+
+      // 2. Increment product stock (return item to warehouse)
+      await tx.product.update({
+        where: { id: stockOut.productId },
+        data: {
+          stok: {
+            increment: stockOut.jumlah,
+          },
+        },
+      });
+
+      // 3. Delete Stock Out transaction
+      await tx.stockOut.delete({
+        where: { id },
+      });
+
+      // 4. Log activity
+      await tx.activityLog.create({
+        data: {
+          userId: user.id,
+          action: "DELETE",
+          tableName: "stockOuts",
+          description: `Menghapus transaksi barang keluar: ${stockOut.jumlah} ${stockOut.product.namaBarang} (${stockOut.kodeTransaksi})`,
+        },
+      });
+
+      return { success: true, message: "Transaksi barang keluar berhasil dihapus" };
+    });
+
+    revalidatePath("/stock-out");
+    revalidatePath("/products");
+    revalidatePath("/dashboard");
+    revalidateTag("products");
+
+    return result;
+  } catch (error: any) {
+    console.error("Error deleting stock out transaction:", error);
+    return {
+      success: false,
+      message: error.message || "Gagal menghapus transaksi barang keluar.",
+    };
+  }
+}
+

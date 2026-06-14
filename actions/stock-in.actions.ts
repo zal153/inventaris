@@ -171,3 +171,77 @@ export async function createStockIn(
     };
   }
 }
+
+// ── Delete Stock In Transaction ───────────────────────
+export async function deleteStockIn(id: string): Promise<ActionResponse> {
+  const user = await getSessionUser();
+  if (!user) {
+    return { success: false, message: "Unauthorized" };
+  }
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Get Stock In detail
+      const stockIn = await tx.stockIn.findUnique({
+        where: { id },
+        include: {
+          product: {
+            select: { namaBarang: true, stok: true, satuan: true },
+          },
+        },
+      });
+
+      if (!stockIn) {
+        throw new Error("Transaksi barang masuk tidak ditemukan");
+      }
+
+      // 2. Validate current stock
+      if (stockIn.product.stok < stockIn.jumlah) {
+        throw new Error(
+          `Stok saat ini (${stockIn.product.stok} ${stockIn.product.satuan}) tidak mencukupi jika dikurangi kembali sebesar ${stockIn.jumlah} ${stockIn.product.satuan}.`
+        );
+      }
+
+      // 3. Decrement product stock
+      await tx.product.update({
+        where: { id: stockIn.productId },
+        data: {
+          stok: {
+            decrement: stockIn.jumlah,
+          },
+        },
+      });
+
+      // 4. Delete Stock In transaction
+      await tx.stockIn.delete({
+        where: { id },
+      });
+
+      // 5. Log activity
+      await tx.activityLog.create({
+        data: {
+          userId: user.id,
+          action: "DELETE",
+          tableName: "stockIns",
+          description: `Menghapus transaksi barang masuk: ${stockIn.jumlah} ${stockIn.product.namaBarang} (${stockIn.kodeTransaksi})`,
+        },
+      });
+
+      return { success: true, message: "Transaksi barang masuk berhasil dihapus" };
+    });
+
+    revalidatePath("/stock-in");
+    revalidatePath("/products");
+    revalidatePath("/dashboard");
+    revalidateTag("products");
+
+    return result;
+  } catch (error: any) {
+    console.error("Error deleting stock in transaction:", error);
+    return {
+      success: false,
+      message: error.message || "Gagal menghapus transaksi barang masuk.",
+    };
+  }
+}
+
