@@ -1,7 +1,10 @@
 "use client";
 
 import { useActionState, useState, useEffect } from "react";
-import { createStockOut, generateStockOutCode } from "@/actions/stock-out.actions";
+import {
+  createStockOut,
+  generateStockOutCode,
+} from "@/actions/stock-out.actions";
 import { Loader2, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -9,7 +12,13 @@ import { toast } from "sonner";
 import { ProductSearchSelect } from "@/components/shared/ProductSearchSelect";
 
 interface StockOutFormProps {
-  products: { id: string; namaBarang: string; kodeBarang: string; stok: number; satuan: string }[];
+  products: {
+    id: string;
+    namaBarang: string;
+    kodeBarang: string;
+    stok: number;
+    satuan: string;
+  }[];
 }
 
 export function StockOutForm({ products }: StockOutFormProps) {
@@ -48,10 +57,23 @@ export function StockOutForm({ products }: StockOutFormProps) {
   }, [state, router]);
 
   // Real-time stock validations
-  const isStockInsufficient = selectedProduct && jumlah !== "" && jumlah > selectedProduct.stok;
+  const isStockInsufficient =
+    selectedProduct && jumlah !== "" && jumlah > selectedProduct.stok;
 
   return (
-    <form action={action} className="space-y-6 w-full bg-card border border-border p-6 rounded-xl shadow-sm">
+    <form
+      action={action}
+      onSubmit={(e) => {
+        const fd = new FormData(e.currentTarget);
+        console.log("[CLIENT] form submit:", {
+          productId: fd.get("productId"),
+          jumlah: fd.get("jumlah"),
+          tujuan: fd.get("tujuan"),
+          tanggal: fd.get("tanggal"),
+        });
+      }}
+      className="space-y-6 w-full bg-card border border-border p-6 rounded-xl shadow-sm"
+    >
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Left Side */}
         <div className="space-y-4">
@@ -79,12 +101,17 @@ export function StockOutForm({ products }: StockOutFormProps) {
               required
             />
             {state?.errors?.productId && (
-              <p className="text-xs text-destructive mt-1">{state.errors.productId[0]}</p>
+              <p className="text-xs text-destructive mt-1">
+                {state.errors.productId[0]}
+              </p>
             )}
 
             {selectedProduct && (
               <p className="text-xs text-muted-foreground mt-1.5">
-                Stok saat ini: <span className="font-semibold text-foreground">{selectedProduct.stok} {selectedProduct.satuan}</span>
+                Stok saat ini:{" "}
+                <span className="font-semibold text-foreground">
+                  {selectedProduct.stok} {selectedProduct.satuan}
+                </span>
               </p>
             )}
           </div>
@@ -103,7 +130,9 @@ export function StockOutForm({ products }: StockOutFormProps) {
               className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50"
             />
             {state?.errors?.tanggal && (
-              <p className="text-xs text-destructive mt-1">{state.errors.tanggal[0]}</p>
+              <p className="text-xs text-destructive mt-1">
+                {state.errors.tanggal[0]}
+              </p>
             )}
           </div>
         </div>
@@ -121,7 +150,9 @@ export function StockOutForm({ products }: StockOutFormProps) {
                   type="number"
                   name="jumlah"
                   value={jumlah}
-                  onChange={(e) => setJumlah(e.target.value ? Number(e.target.value) : "")}
+                  onChange={(e) =>
+                    setJumlah(e.target.value ? Number(e.target.value) : "")
+                  }
                   placeholder="0"
                   min={1}
                   required
@@ -139,13 +170,18 @@ export function StockOutForm({ products }: StockOutFormProps) {
                 )}
               </div>
               {state?.errors?.jumlah && (
-                <p className="text-xs text-destructive mt-1">{state.errors.jumlah[0]}</p>
+                <p className="text-xs text-destructive mt-1">
+                  {state.errors.jumlah[0]}
+                </p>
               )}
 
               {isStockInsufficient && (
                 <div className="flex items-center gap-1.5 text-xs text-destructive mt-1.5 font-medium animate-pulse">
                   <AlertTriangle className="h-3.5 w-3.5" />
-                  <span>Stok tidak mencukupi! Tersedia hanya {selectedProduct.stok} {selectedProduct.satuan}.</span>
+                  <span>
+                    Stok tidak mencukupi! Tersedia hanya {selectedProduct.stok}{" "}
+                    {selectedProduct.satuan}.
+                  </span>
                 </div>
               )}
             </div>
@@ -167,11 +203,15 @@ export function StockOutForm({ products }: StockOutFormProps) {
                 <option value="Penjualan">Penjualan / Toko</option>
                 <option value="Retur">Retur Barang</option>
                 <option value="Rusak">Barang Rusak / Kadaluarsa</option>
-                <option value="Kebutuhan Internal">Kebutuhan Internal Gudang</option>
+                <option value="Kebutuhan Internal">
+                  Kebutuhan Internal Gudang
+                </option>
                 <option value="Lain-lain">Lain-lain</option>
               </select>
               {state?.errors?.tujuan && (
-                <p className="text-xs text-destructive mt-1">{state.errors.tujuan[0]}</p>
+                <p className="text-xs text-destructive mt-1">
+                  {state.errors.tujuan[0]}
+                </p>
               )}
             </div>
           </div>

@@ -61,24 +61,28 @@ export async function getStockOuts(filters?: {
 // ── Auto Generate Stock Out Code ─────────────────────
 export async function generateStockOutCode(): Promise<string> {
   try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+    const prefix = `BK-${dateStr}-`;
 
-    const count = await prisma.stockOut.count({
-      where: {
-        createdAt: {
-          gte: today,
-          lt: tomorrow,
-        },
-      },
+    // Find the last existing code for today by prefix (timezone-safe)
+    const lastRecord = await prisma.stockOut.findFirst({
+      where: { kodeTransaksi: { startsWith: prefix } },
+      orderBy: { kodeTransaksi: "desc" },
+      select: { kodeTransaksi: true },
     });
 
-    return generateKodeTransaksi("BK", count + 1);
+    let sequence = 1;
+    if (lastRecord) {
+      const parts = lastRecord.kodeTransaksi.split("-");
+      const lastSeq = parseInt(parts[parts.length - 1], 10);
+      if (!isNaN(lastSeq)) sequence = lastSeq + 1;
+    }
+
+    return `${prefix}${String(sequence).padStart(3, "0")}`;
   } catch (error) {
     console.error("Error generating stock out code:", error);
-    return "BK-ERROR-000";
+    return `BK-ERROR-${Date.now()}`; // unique fallback to avoid collision
   }
 }
 
@@ -102,7 +106,16 @@ export async function createStockOut(
     catatan: (formData.get("catatan") as string) || null,
   };
 
+  console.log("[DEBUG] createStockOut called");
+  console.log("[DEBUG] raw data:", JSON.stringify(raw, null, 2));
+
   const result = stockOutSchema.safeParse(raw);
+  console.log(
+    "[DEBUG] validation:",
+    result.success ? "PASS" : "FAIL",
+    !result.success ? result.error.issues : "",
+  );
+
   if (!result.success) {
     return {
       success: false,
@@ -112,10 +125,12 @@ export async function createStockOut(
   }
 
   try {
+    console.log("[DEBUG] Step 1: Finding product", raw.productId);
     const product = await prisma.product.findUnique({
       where: { id: raw.productId },
       select: { stok: true, namaBarang: true, kodeBarang: true },
     });
+    console.log("[DEBUG] Step 1 result:", product);
 
     if (!product) {
       return {
@@ -131,13 +146,17 @@ export async function createStockOut(
       };
     }
 
+    console.log("[DEBUG] Step 2: Generating code");
     const code = await generateStockOutCode();
+    console.log("[DEBUG] Step 2 code:", code);
 
+    console.log("[DEBUG] Step 3: updateMany stock decrement");
     // Atomically decrement stock only if still sufficient (optimistic locking)
     const stockUpdate = await prisma.product.updateMany({
       where: { id: raw.productId, stok: { gte: raw.jumlah } },
       data: { stok: { decrement: raw.jumlah } },
     });
+    console.log("[DEBUG] Step 3 result:", stockUpdate);
 
     if (stockUpdate.count === 0) {
       return {
@@ -147,6 +166,7 @@ export async function createStockOut(
     }
 
     try {
+      console.log("[DEBUG] Step 4: Creating StockOut record");
       // Create Stock Out record
       await prisma.stockOut.create({
         data: {
@@ -159,7 +179,9 @@ export async function createStockOut(
           userId: user.id,
         },
       });
+      console.log("[DEBUG] Step 4 done");
 
+      console.log("[DEBUG] Step 5: Creating ActivityLog");
       // Log activity
       await prisma.activityLog.create({
         data: {
@@ -169,7 +191,9 @@ export async function createStockOut(
           description: `Mencatat barang keluar: ${raw.jumlah} ${product.namaBarang} (${code})`,
         },
       });
+      console.log("[DEBUG] Step 5 done");
     } catch (writeError) {
+      console.error("[DEBUG] Write error (rolling back stock):", writeError);
       // Rollback stock decrement if subsequent writes fail
       await prisma.product.update({
         where: { id: raw.productId },
@@ -182,12 +206,13 @@ export async function createStockOut(
     revalidatePath("/products");
     revalidatePath("/dashboard");
     revalidateTag("products");
+    console.log("[DEBUG] createStockOut SUCCESS");
     return {
       success: true,
       message: "Barang keluar berhasil dicatat",
     };
   } catch (error) {
-    console.error("Error creating stock out transaction:", error);
+    console.error("[DEBUG] CATCH ERROR:", error);
     return {
       success: false,
       message: "Gagal mencatat transaksi barang keluar.",

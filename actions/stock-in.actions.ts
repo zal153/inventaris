@@ -58,27 +58,31 @@ export async function getStockIns(filters?: {
   }
 }
 
-// ── Auto Generate Stock In Code ──────────────────────
+// ── Auto Generate Stock In Code ─────────────────────
 export async function generateStockInCode(): Promise<string> {
   try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+    const prefix = `BM-${dateStr}-`;
 
-    const count = await prisma.stockIn.count({
-      where: {
-        createdAt: {
-          gte: today,
-          lt: tomorrow,
-        },
-      },
+    // Find the last existing code for today by prefix (timezone-safe)
+    const lastRecord = await prisma.stockIn.findFirst({
+      where: { kodeTransaksi: { startsWith: prefix } },
+      orderBy: { kodeTransaksi: "desc" },
+      select: { kodeTransaksi: true },
     });
 
-    return generateKodeTransaksi("BM", count + 1);
+    let sequence = 1;
+    if (lastRecord) {
+      const parts = lastRecord.kodeTransaksi.split("-");
+      const lastSeq = parseInt(parts[parts.length - 1], 10);
+      if (!isNaN(lastSeq)) sequence = lastSeq + 1;
+    }
+
+    return `${prefix}${String(sequence).padStart(3, "0")}`;
   } catch (error) {
     console.error("Error generating stock in code:", error);
-    return "BM-ERROR-000";
+    return `BM-ERROR-${Date.now()}`; // unique fallback to avoid collision
   }
 }
 
