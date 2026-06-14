@@ -1,0 +1,21 @@
+{
+  "appId": "com.stocksync.app",
+  "appName": "StockSync",
+  "webDir": "out",
+  "server": {
+    "url": "https://inventaris-nextjs.vercel.app",
+    "cleartext": false
+  },
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#ffffff",
+    "webContentsDebuggingEnabled": false
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 2000,
+      "backgroundColor": "#2563eb",
+      "showSpinner": false
+    }
+  }
+}

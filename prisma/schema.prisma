@@ -1,0 +1,107 @@
+// StockSync Offline - Prisma Schema
+// Database: SQLite (offline-first inventory management)
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ─── Users ────────────────────────────────────────────
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      String   @default("ADMIN") // ADMIN only for now
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stockIns     StockIn[]
+  stockOuts    StockOut[]
+  activityLogs ActivityLog[]
+}
+
+// ─── Categories ───────────────────────────────────────
+model Category {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  products Product[]
+}
+
+// ─── Products ─────────────────────────────────────────
+model Product {
+  id          String   @id @default(cuid())
+  kodeBarang  String   @unique
+  namaBarang  String
+  categoryId  String
+  satuan      String   @default("pcs")
+  hargaBeli   Float    @default(0)
+  hargaJual   Float    @default(0)
+  stok        Int      @default(0)
+  minimumStok Int      @default(5)
+  stokIdeal   Int      @default(20)
+  barcode     String?
+  gambar      String?
+  deskripsi   String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  category  Category  @relation(fields: [categoryId], references: [id])
+  stockIns  StockIn[]
+  stockOuts StockOut[]
+}
+
+// ─── Stock In (Barang Masuk) ──────────────────────────
+model StockIn {
+  id            String   @id @default(cuid())
+  kodeTransaksi String   @unique
+  productId     String
+  jumlah        Int
+  hargaBeli     Float
+  tanggal       DateTime @default(now())
+  catatan       String?
+  userId        String
+  createdAt     DateTime @default(now())
+
+  product  Product   @relation(fields: [productId], references: [id])
+  user     User      @relation(fields: [userId], references: [id])
+}
+
+// ─── Stock Out (Barang Keluar) ────────────────────────
+model StockOut {
+  id            String   @id @default(cuid())
+  kodeTransaksi String   @unique
+  productId     String
+  jumlah        Int
+  tujuan        String?
+  tanggal       DateTime @default(now())
+  catatan       String?
+  userId        String
+  createdAt     DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+}
+
+// ─── Activity Log (Audit) ─────────────────────────────
+model ActivityLog {
+  id          String   @id @default(cuid())
+  userId      String
+  action      String   // CREATE | UPDATE | DELETE | LOGIN | LOGOUT
+  tableName   String
+  description String
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}

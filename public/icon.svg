@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <!-- Background with subtle modern blue gradient -->
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6" />
+      <stop offset="100%" stop-color="#1d4ed8" />
+    </linearGradient>
+    <linearGradient id="boxTop" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#60a5fa" />
+      <stop offset="100%" stop-color="#93c5fd" />
+    </linearGradient>
+    <linearGradient id="boxLeft" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#1d4ed8" />
+    </linearGradient>
+    <linearGradient id="boxRight" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1d4ed8" />
+      <stop offset="100%" stop-color="#1e3a8a" />
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+
+  <!-- 3D Flat Box Logo -->
+  <g transform="translate(0, 10)">
+    <!-- Top Face -->
+    <polygon points="256,120 380,190 256,260 132,190" fill="url(#boxTop)" />
+    
+    <!-- Left Face -->
+    <polygon points="132,190 256,260 256,390 132,320" fill="url(#boxLeft)" />
+    
+    <!-- Right Face -->
+    <polygon points="256,260 380,190 380,320 256,390" fill="url(#boxRight)" />
+
+    <!-- Details/Lines to look like an opened delivery box -->
+    <line x1="256" y1="260" x2="256" y2="120" stroke="#1d4ed8" stroke-width="3" opacity="0.3" />
+    <polygon points="256,190 318,225 256,260 194,225" fill="#ffffff" opacity="0.15" />
+  </g>
+</svg>
