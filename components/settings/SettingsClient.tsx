@@ -14,12 +14,13 @@ import {
   Users,
   Activity,
   Loader2,
+  Cloud,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 
 interface SystemInfoProps {
-  dbSize: string;
+  dbLocation: string;
   totalProducts: number;
   totalCategories: number;
   totalUsers: number;
@@ -102,47 +103,26 @@ export function SettingsClient({ info }: SettingsClientProps) {
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Side: DB Backup & Restore Actions */}
+        {/* Left Side: Cloud Database Info */}
         <div className="space-y-6">
           <div className="bg-card border border-border rounded-xl p-5 shadow-sm space-y-4">
             <h4 className="font-semibold text-sm text-muted-foreground tracking-wider uppercase flex items-center gap-2 pb-2 border-b border-border">
-              <Database className="h-4 w-4" /> Pemeliharaan Database
+              <Cloud className="h-4 w-4 text-sky-500" /> Infrastruktur Database
             </h4>
 
-            {/* Backup Action */}
-            <div className="space-y-2">
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                Unduh salinan file database SQLite lokal (`sqlite`) saat ini ke komputer Anda untuk cadangan data.
+            <div className="space-y-3">
+              <p className="text-xs text-foreground leading-relaxed font-semibold">
+                Status Koneksi: <span className="text-emerald-500 font-bold">Terhubung ke Cloud</span>
               </p>
-              <button
-                onClick={handleBackup}
-                className="w-full flex items-center justify-center gap-2 rounded-lg bg-primary hover:bg-primary/95 text-primary-foreground font-semibold py-2.5 text-sm shadow-sm transition"
-              >
-                <Download className="h-4 w-4" />
-                <span>Unduh Backup Database</span>
-              </button>
-            </div>
-
-            {/* Restore Action */}
-            <div className="border-t border-border/60 pt-4 space-y-2">
               <p className="text-xs text-muted-foreground leading-relaxed">
-                Unggah file `.sqlite` hasil backup sebelumnya untuk memulihkan seluruh data transaksi dan inventaris.
+                Sistem inventaris StockSync saat ini menggunakan database **Supabase PostgreSQL (Cloud)** yang terletak di wilayah **Singapura (ap-southeast-1)**.
               </p>
-              <label className="w-full flex items-center justify-center gap-2 rounded-lg border border-border bg-card hover:bg-muted/30 text-foreground font-semibold py-2.5 text-sm shadow-sm cursor-pointer transition">
-                {isRestoring ? (
-                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                ) : (
-                  <Upload className="h-4 w-4 text-muted-foreground" />
-                )}
-                <span>Cari File Backup & Restore</span>
-                <input
-                  type="file"
-                  accept=".sqlite, .db"
-                  onChange={handleFileChange}
-                  disabled={isRestoring}
-                  className="hidden"
-                />
-              </label>
+              <div className="border-t border-border/60 pt-4 space-y-2">
+                <p className="font-semibold text-xs text-muted-foreground">Pencadangan Otomatis:</p>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Pencadangan (*backup*) dan pemulihan (*restore*) seluruh data transaksi serta inventaris dikelola secara otomatis setiap hari oleh platform cloud Supabase. Pemeliharaan database secara manual/lokal tidak diperlukan lagi.
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -198,8 +178,8 @@ export function SettingsClient({ info }: SettingsClientProps) {
 
               <div className="space-y-3.5 text-xs text-muted-foreground">
                 <div className="flex justify-between items-center border-b border-border/40 pb-2">
-                  <span>Ukuran Database SQLite:</span>
-                  <span className="font-semibold text-foreground">{info.dbSize}</span>
+                  <span>Lokasi Database:</span>
+                  <span className="font-semibold text-foreground">{info.dbLocation}</span>
                 </div>
                 <div className="flex justify-between items-center border-b border-border/40 pb-2">
                   <span>Versi Node.js:</span>

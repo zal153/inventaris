@@ -36,16 +36,7 @@ export async function getActivityLogs() {
 // ── Get System Information ────────────────────────────
 export async function getSystemInfo() {
   try {
-    const dbPath = path.join(process.cwd(), "prisma", "sqlite");
-    let dbSize = "0 B";
-
-    try {
-      const stats = await fs.stat(dbPath);
-      const sizeInMB = stats.size / (1024 * 1024);
-      dbSize = `${sizeInMB.toFixed(2)} MB (${stats.size.toLocaleString("id-ID")} bytes)`;
-    } catch (err) {
-      console.warn("Could not read database file size:", err);
-    }
+    const dbLocation = "Supabase PostgreSQL (Cloud)";
 
     const [
       totalProducts,
@@ -64,7 +55,7 @@ export async function getSystemInfo() {
     ]);
 
     return {
-      dbSize,
+      dbLocation,
       totalProducts,
       totalCategories,
       totalUsers,
