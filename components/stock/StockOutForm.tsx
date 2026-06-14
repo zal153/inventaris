@@ -63,15 +63,6 @@ export function StockOutForm({ products }: StockOutFormProps) {
   return (
     <form
       action={action}
-      onSubmit={(e) => {
-        const fd = new FormData(e.currentTarget);
-        console.log("[CLIENT] form submit:", {
-          productId: fd.get("productId"),
-          jumlah: fd.get("jumlah"),
-          tujuan: fd.get("tujuan"),
-          tanggal: fd.get("tanggal"),
-        });
-      }}
       className="space-y-6 w-full bg-card border border-border p-6 rounded-xl shadow-sm"
     >
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

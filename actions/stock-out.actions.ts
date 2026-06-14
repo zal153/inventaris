@@ -106,15 +106,7 @@ export async function createStockOut(
     catatan: (formData.get("catatan") as string) || null,
   };
 
-  console.log("[DEBUG] createStockOut called");
-  console.log("[DEBUG] raw data:", JSON.stringify(raw, null, 2));
-
   const result = stockOutSchema.safeParse(raw);
-  console.log(
-    "[DEBUG] validation:",
-    result.success ? "PASS" : "FAIL",
-    !result.success ? result.error.issues : "",
-  );
 
   if (!result.success) {
     return {
@@ -125,12 +117,10 @@ export async function createStockOut(
   }
 
   try {
-    console.log("[DEBUG] Step 1: Finding product", raw.productId);
     const product = await prisma.product.findUnique({
       where: { id: raw.productId },
       select: { stok: true, namaBarang: true, kodeBarang: true },
     });
-    console.log("[DEBUG] Step 1 result:", product);
 
     if (!product) {
       return {
@@ -146,17 +136,13 @@ export async function createStockOut(
       };
     }
 
-    console.log("[DEBUG] Step 2: Generating code");
     const code = await generateStockOutCode();
-    console.log("[DEBUG] Step 2 code:", code);
 
-    console.log("[DEBUG] Step 3: updateMany stock decrement");
     // Atomically decrement stock only if still sufficient (optimistic locking)
     const stockUpdate = await prisma.product.updateMany({
       where: { id: raw.productId, stok: { gte: raw.jumlah } },
       data: { stok: { decrement: raw.jumlah } },
     });
-    console.log("[DEBUG] Step 3 result:", stockUpdate);
 
     if (stockUpdate.count === 0) {
       return {
@@ -166,7 +152,6 @@ export async function createStockOut(
     }
 
     try {
-      console.log("[DEBUG] Step 4: Creating StockOut record");
       // Create Stock Out record
       await prisma.stockOut.create({
         data: {
@@ -179,9 +164,7 @@ export async function createStockOut(
           userId: user.id,
         },
       });
-      console.log("[DEBUG] Step 4 done");
 
-      console.log("[DEBUG] Step 5: Creating ActivityLog");
       // Log activity
       await prisma.activityLog.create({
         data: {
@@ -191,9 +174,11 @@ export async function createStockOut(
           description: `Mencatat barang keluar: ${raw.jumlah} ${product.namaBarang} (${code})`,
         },
       });
-      console.log("[DEBUG] Step 5 done");
     } catch (writeError) {
-      console.error("[DEBUG] Write error (rolling back stock):", writeError);
+      console.error(
+        "Error creating stock out record (rolling back stock):",
+        writeError,
+      );
       // Rollback stock decrement if subsequent writes fail
       await prisma.product.update({
         where: { id: raw.productId },
@@ -206,13 +191,12 @@ export async function createStockOut(
     revalidatePath("/products");
     revalidatePath("/dashboard");
     revalidateTag("products");
-    console.log("[DEBUG] createStockOut SUCCESS");
     return {
       success: true,
       message: "Barang keluar berhasil dicatat",
     };
   } catch (error) {
-    console.error("[DEBUG] CATCH ERROR:", error);
+    console.error("Error creating stock out transaction:", error);
     return {
       success: false,
       message: "Gagal mencatat transaksi barang keluar.",
