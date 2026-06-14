@@ -14,7 +14,7 @@ export async function getStockIns(filters?: {
 }): Promise<StockInWithRelations[]> {
   try {
     const where: any = {};
-    
+
     if (filters?.startDate || filters?.endDate) {
       where.tanggal = {};
       if (filters.startDate) {
@@ -85,7 +85,7 @@ export async function generateStockInCode(): Promise<string> {
 // ── Create Stock In Transaction ───────────────────────
 export async function createStockIn(
   prevState: any,
-  formData: FormData
+  formData: FormData,
 ): Promise<ActionResponse> {
   const user = await getSessionUser();
   if (!user) {
@@ -95,8 +95,12 @@ export async function createStockIn(
   const raw = {
     productId: formData.get("productId") as string,
     jumlah: formData.get("jumlah") ? Number(formData.get("jumlah")) : 0,
-    hargaBeli: formData.get("hargaBeli") ? Number(formData.get("hargaBeli")) : 0,
-    tanggal: formData.get("tanggal") ? new Date(formData.get("tanggal") as string) : new Date(),
+    hargaBeli: formData.get("hargaBeli")
+      ? Number(formData.get("hargaBeli"))
+      : 0,
+    tanggal: formData.get("tanggal")
+      ? new Date(formData.get("tanggal") as string)
+      : new Date(),
     catatan: (formData.get("catatan") as string) || null,
   };
 
@@ -110,12 +114,30 @@ export async function createStockIn(
   }
 
   try {
+    // Fetch product name for activity log
+    const product = await prisma.product.findUnique({
+      where: { id: raw.productId },
+      select: { namaBarang: true, kodeBarang: true },
+    });
+
+    if (!product) {
+      return { success: false, message: "Barang tidak ditemukan" };
+    }
+
     const code = await generateStockInCode();
 
-    // Use transaction to ensure both stock in creation and product update succeed
-    await prisma.$transaction(async (tx) => {
-      // 1. Create Stock In
-      await tx.stockIn.create({
+    // Increment stock and update hargaBeli
+    await prisma.product.update({
+      where: { id: raw.productId },
+      data: {
+        stok: { increment: raw.jumlah },
+        hargaBeli: raw.hargaBeli,
+      },
+    });
+
+    try {
+      // Create Stock In record
+      await prisma.stockIn.create({
         data: {
           kodeTransaksi: code,
           productId: raw.productId,
@@ -127,33 +149,26 @@ export async function createStockIn(
         },
       });
 
-      // 2. Increment stock in Product
-      await tx.product.update({
-        where: { id: raw.productId },
-        data: {
-          stok: {
-            increment: raw.jumlah,
-          },
-          // Optionally update product's hargaBeli if it changed
-          hargaBeli: raw.hargaBeli,
-        },
-      });
-
-      // 3. Log activity
-      const product = await tx.product.findUnique({
-        where: { id: raw.productId },
-        select: { namaBarang: true, kodeBarang: true },
-      });
-
-      await tx.activityLog.create({
+      // Log activity
+      await prisma.activityLog.create({
         data: {
           userId: user.id,
           action: "CREATE",
           tableName: "stockIns",
-          description: `Mencatat barang masuk: ${raw.jumlah} ${product?.namaBarang} (${code})`,
+          description: `Mencatat barang masuk: ${raw.jumlah} ${product.namaBarang} (${code})`,
         },
       });
-    });
+    } catch (writeError) {
+      // Rollback stock increment if subsequent writes fail
+      await prisma.product.update({
+        where: { id: raw.productId },
+        data: {
+          stok: { decrement: raw.jumlah },
+          hargaBeli: raw.hargaBeli, // keep updated hargaBeli even on rollback
+        },
+      });
+      throw writeError;
+    }
 
     revalidatePath("/stock-in");
     revalidatePath("/products");
@@ -180,45 +195,50 @@ export async function deleteStockIn(id: string): Promise<ActionResponse> {
   }
 
   try {
-    const result = await prisma.$transaction(async (tx) => {
-      // 1. Get Stock In detail
-      const stockIn = await tx.stockIn.findUnique({
-        where: { id },
-        include: {
-          product: {
-            select: { namaBarang: true, stok: true, satuan: true },
-          },
+    // 1. Get Stock In detail
+    const stockIn = await prisma.stockIn.findUnique({
+      where: { id },
+      include: {
+        product: {
+          select: { namaBarang: true, stok: true, satuan: true },
         },
-      });
+      },
+    });
 
-      if (!stockIn) {
-        throw new Error("Transaksi barang masuk tidak ditemukan");
-      }
+    if (!stockIn) {
+      return {
+        success: false,
+        message: "Transaksi barang masuk tidak ditemukan",
+      };
+    }
 
-      // 2. Validate current stock
-      if (stockIn.product.stok < stockIn.jumlah) {
-        throw new Error(
-          `Stok saat ini (${stockIn.product.stok} ${stockIn.product.satuan}) tidak mencukupi jika dikurangi kembali sebesar ${stockIn.jumlah} ${stockIn.product.satuan}.`
-        );
-      }
+    // 2. Validate current stock before decrement
+    if (stockIn.product.stok < stockIn.jumlah) {
+      return {
+        success: false,
+        message: `Stok saat ini (${stockIn.product.stok} ${stockIn.product.satuan}) tidak mencukupi jika dikurangi kembali sebesar ${stockIn.jumlah} ${stockIn.product.satuan}.`,
+      };
+    }
 
-      // 3. Decrement product stock
-      await tx.product.update({
-        where: { id: stockIn.productId },
-        data: {
-          stok: {
-            decrement: stockIn.jumlah,
-          },
-        },
-      });
+    // 3. Atomically decrement stock only if still sufficient
+    const stockUpdate = await prisma.product.updateMany({
+      where: { id: stockIn.productId, stok: { gte: stockIn.jumlah } },
+      data: { stok: { decrement: stockIn.jumlah } },
+    });
 
+    if (stockUpdate.count === 0) {
+      return {
+        success: false,
+        message: `Stok tidak mencukupi untuk membatalkan transaksi ini.`,
+      };
+    }
+
+    try {
       // 4. Delete Stock In transaction
-      await tx.stockIn.delete({
-        where: { id },
-      });
+      await prisma.stockIn.delete({ where: { id } });
 
       // 5. Log activity
-      await tx.activityLog.create({
+      await prisma.activityLog.create({
         data: {
           userId: user.id,
           action: "DELETE",
@@ -226,16 +246,24 @@ export async function deleteStockIn(id: string): Promise<ActionResponse> {
           description: `Menghapus transaksi barang masuk: ${stockIn.jumlah} ${stockIn.product.namaBarang} (${stockIn.kodeTransaksi})`,
         },
       });
-
-      return { success: true, message: "Transaksi barang masuk berhasil dihapus" };
-    });
+    } catch (writeError) {
+      // Rollback stock decrement if delete/log fails
+      await prisma.product.update({
+        where: { id: stockIn.productId },
+        data: { stok: { increment: stockIn.jumlah } },
+      });
+      throw writeError;
+    }
 
     revalidatePath("/stock-in");
     revalidatePath("/products");
     revalidatePath("/dashboard");
     revalidateTag("products");
 
-    return result;
+    return {
+      success: true,
+      message: "Transaksi barang masuk berhasil dihapus",
+    };
   } catch (error: any) {
     console.error("Error deleting stock in transaction:", error);
     return {
@@ -244,4 +272,3 @@ export async function deleteStockIn(id: string): Promise<ActionResponse> {
     };
   }
 }
-

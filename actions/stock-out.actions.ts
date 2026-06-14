@@ -14,7 +14,7 @@ export async function getStockOuts(filters?: {
 }): Promise<StockOutWithRelations[]> {
   try {
     const where: any = {};
-    
+
     if (filters?.startDate || filters?.endDate) {
       where.tanggal = {};
       if (filters.startDate) {
@@ -85,7 +85,7 @@ export async function generateStockOutCode(): Promise<string> {
 // ── Create Stock Out Transaction ─────────────────────
 export async function createStockOut(
   prevState: any,
-  formData: FormData
+  formData: FormData,
 ): Promise<ActionResponse> {
   const user = await getSessionUser();
   if (!user) {
@@ -96,7 +96,9 @@ export async function createStockOut(
     productId: formData.get("productId") as string,
     jumlah: formData.get("jumlah") ? Number(formData.get("jumlah")) : 0,
     tujuan: (formData.get("tujuan") as string) || "",
-    tanggal: formData.get("tanggal") ? new Date(formData.get("tanggal") as string) : new Date(),
+    tanggal: formData.get("tanggal")
+      ? new Date(formData.get("tanggal") as string)
+      : new Date(),
     catatan: (formData.get("catatan") as string) || null,
   };
 
@@ -131,10 +133,22 @@ export async function createStockOut(
 
     const code = await generateStockOutCode();
 
-    // Use transaction to ensure consistency
-    await prisma.$transaction(async (tx) => {
-      // 1. Create Stock Out
-      await tx.stockOut.create({
+    // Atomically decrement stock only if still sufficient (optimistic locking)
+    const stockUpdate = await prisma.product.updateMany({
+      where: { id: raw.productId, stok: { gte: raw.jumlah } },
+      data: { stok: { decrement: raw.jumlah } },
+    });
+
+    if (stockUpdate.count === 0) {
+      return {
+        success: false,
+        message: `Stok tidak mencukupi. Stok berubah saat transaksi, silakan coba lagi.`,
+      };
+    }
+
+    try {
+      // Create Stock Out record
+      await prisma.stockOut.create({
         data: {
           kodeTransaksi: code,
           productId: raw.productId,
@@ -146,18 +160,8 @@ export async function createStockOut(
         },
       });
 
-      // 2. Decrement stock in Product
-      await tx.product.update({
-        where: { id: raw.productId },
-        data: {
-          stok: {
-            decrement: raw.jumlah,
-          },
-        },
-      });
-
-      // 3. Log activity
-      await tx.activityLog.create({
+      // Log activity
+      await prisma.activityLog.create({
         data: {
           userId: user.id,
           action: "CREATE",
@@ -165,7 +169,14 @@ export async function createStockOut(
           description: `Mencatat barang keluar: ${raw.jumlah} ${product.namaBarang} (${code})`,
         },
       });
-    });
+    } catch (writeError) {
+      // Rollback stock decrement if subsequent writes fail
+      await prisma.product.update({
+        where: { id: raw.productId },
+        data: { stok: { increment: raw.jumlah } },
+      });
+      throw writeError;
+    }
 
     revalidatePath("/stock-out");
     revalidatePath("/products");
@@ -192,38 +203,35 @@ export async function deleteStockOut(id: string): Promise<ActionResponse> {
   }
 
   try {
-    const result = await prisma.$transaction(async (tx) => {
-      // 1. Get Stock Out detail
-      const stockOut = await tx.stockOut.findUnique({
-        where: { id },
-        include: {
-          product: {
-            select: { namaBarang: true },
-          },
+    // 1. Get Stock Out detail
+    const stockOut = await prisma.stockOut.findUnique({
+      where: { id },
+      include: {
+        product: {
+          select: { namaBarang: true },
         },
-      });
+      },
+    });
 
-      if (!stockOut) {
-        throw new Error("Transaksi barang keluar tidak ditemukan");
-      }
+    if (!stockOut) {
+      return {
+        success: false,
+        message: "Transaksi barang keluar tidak ditemukan",
+      };
+    }
 
-      // 2. Increment product stock (return item to warehouse)
-      await tx.product.update({
-        where: { id: stockOut.productId },
-        data: {
-          stok: {
-            increment: stockOut.jumlah,
-          },
-        },
-      });
+    // 2. Increment product stock (return item to warehouse)
+    await prisma.product.update({
+      where: { id: stockOut.productId },
+      data: { stok: { increment: stockOut.jumlah } },
+    });
 
+    try {
       // 3. Delete Stock Out transaction
-      await tx.stockOut.delete({
-        where: { id },
-      });
+      await prisma.stockOut.delete({ where: { id } });
 
       // 4. Log activity
-      await tx.activityLog.create({
+      await prisma.activityLog.create({
         data: {
           userId: user.id,
           action: "DELETE",
@@ -231,16 +239,24 @@ export async function deleteStockOut(id: string): Promise<ActionResponse> {
           description: `Menghapus transaksi barang keluar: ${stockOut.jumlah} ${stockOut.product.namaBarang} (${stockOut.kodeTransaksi})`,
         },
       });
-
-      return { success: true, message: "Transaksi barang keluar berhasil dihapus" };
-    });
+    } catch (writeError) {
+      // Rollback stock increment if delete/log fails
+      await prisma.product.update({
+        where: { id: stockOut.productId },
+        data: { stok: { decrement: stockOut.jumlah } },
+      });
+      throw writeError;
+    }
 
     revalidatePath("/stock-out");
     revalidatePath("/products");
     revalidatePath("/dashboard");
     revalidateTag("products");
 
-    return result;
+    return {
+      success: true,
+      message: "Transaksi barang keluar berhasil dihapus",
+    };
   } catch (error: any) {
     console.error("Error deleting stock out transaction:", error);
     return {
@@ -249,4 +265,3 @@ export async function deleteStockOut(id: string): Promise<ActionResponse> {
     };
   }
 }
-
