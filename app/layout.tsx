@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "sonner";
-import { PWARegister } from "@/components/layout/PWARegister";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -20,12 +19,6 @@ export const metadata: Metadata = {
     template: "%s | StockSync Offline",
   },
   description: "Sistem Informasi Manajemen Stok Barang Offline",
-  manifest: "/manifest.json",
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "default",
-    title: "StockSync Offline",
-  },
 };
 
 export default function RootLayout({
@@ -40,9 +33,6 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <head>
-        <meta name="theme-color" content="#2563eb" />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -62,7 +52,6 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen antialiased">
         {children}
-        <PWARegister />
         <Toaster
           position="top-right"
           richColors

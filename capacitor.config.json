@@ -3,7 +3,7 @@
   "appName": "StockSync",
   "webDir": "out",
   "server": {
-    "url": "https://inventaris-nextjs.vercel.app",
+    "url": "https://inventaris-tan.vercel.app",
     "cleartext": false
   },
   "android": {

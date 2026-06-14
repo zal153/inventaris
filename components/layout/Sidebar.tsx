@@ -22,7 +22,6 @@ import {
   Users,
 } from "lucide-react";
 import { useState, useEffect } from "react";
-import { PWAInstallButton } from "./PWAInstallButton";
 
 const navItems = [
   {
@@ -256,9 +255,6 @@ export function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClose }: Si
 
         {/* Footer */}
         <div className="border-t border-sidebar-border p-3 space-y-1">
-          {/* PWA Install Button */}
-          <PWAInstallButton collapsed={collapsed} />
-
           {/* Dark Mode Toggle */}
           <button
             onClick={toggleDarkMode}
