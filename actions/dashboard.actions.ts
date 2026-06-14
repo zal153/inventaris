@@ -10,13 +10,11 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   tomorrow.setDate(tomorrow.getDate() + 1);
 
   const [
-    totalProducts,
     totalCategories,
     stockInToday,
     stockOutToday,
     allProducts,
   ] = await Promise.all([
-    prisma.product.count({ where: { isActive: true } }),
     prisma.category.count(),
     prisma.stockIn.count({
       where: {
@@ -34,6 +32,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     }),
   ]);
 
+  const totalProducts = allProducts.length;
   const lowStockCount = allProducts.filter(
     (p) => p.stok > 0 && p.stok <= p.minimumStok
   ).length;
@@ -71,33 +70,53 @@ export async function getLowStockProducts(): Promise<LowStockProduct[]> {
 
 export async function getMonthlyStockData(): Promise<MonthlyStockData[]> {
   const now = new Date();
+  
+  // Ambil data dari 5 bulan lalu (awal bulan) sampai akhir bulan ini
+  const startRange = new Date(now.getFullYear(), now.getMonth() - 5, 1, 0, 0, 0, 0);
+  const endRange = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+  // Jalankan 2 query untuk mengambil seluruh data transaksi masuk dan keluar
+  const [stockInList, stockOutList] = await Promise.all([
+    prisma.stockIn.findMany({
+      where: {
+        tanggal: { gte: startRange, lte: endRange },
+      },
+      select: {
+        tanggal: true,
+        jumlah: true,
+      },
+    }),
+    prisma.stockOut.findMany({
+      where: {
+        tanggal: { gte: startRange, lte: endRange },
+      },
+      select: {
+        tanggal: true,
+        jumlah: true,
+      },
+    }),
+  ]);
+
   const months: MonthlyStockData[] = [];
 
+  // Hitung agregasi per bulan di memori (in-memory aggregation)
   for (let i = 5; i >= 0; i--) {
-    const start = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const end = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59);
-
+    const start = new Date(now.getFullYear(), now.getMonth() - i, 1, 0, 0, 0, 0);
+    const end = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59, 999);
     const monthName = start.toLocaleDateString("id-ID", { month: "short" });
 
-    const [masukCount, keluarCount] = await Promise.all([
-      prisma.stockIn.aggregate({
-        _sum: { jumlah: true },
-        where: {
-          tanggal: { gte: start, lte: end },
-        },
-      }),
-      prisma.stockOut.aggregate({
-        _sum: { jumlah: true },
-        where: {
-          tanggal: { gte: start, lte: end },
-        },
-      }),
-    ]);
+    const masuk = stockInList
+      .filter((item) => item.tanggal >= start && item.tanggal <= end)
+      .reduce((sum, item) => sum + item.jumlah, 0);
+
+    const keluar = stockOutList
+      .filter((item) => item.tanggal >= start && item.tanggal <= end)
+      .reduce((sum, item) => sum + item.jumlah, 0);
 
     months.push({
       month: monthName,
-      masuk: masukCount._sum.jumlah || 0,
-      keluar: keluarCount._sum.jumlah || 0,
+      masuk,
+      keluar,
     });
   }
 
