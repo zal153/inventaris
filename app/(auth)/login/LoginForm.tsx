@@ -53,7 +53,7 @@ export function LoginForm() {
           type="email"
           autoComplete="email"
           required
-          placeholder="admin@stocksync.local"
+          placeholder="Email"
           className="flex h-11 w-full rounded-lg border border-input bg-background px-3.5 text-sm text-foreground transition-colors placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 focus:ring-offset-background disabled:opacity-50"
         />
       </div>
@@ -72,7 +72,7 @@ export function LoginForm() {
             type={showPassword ? "text" : "password"}
             autoComplete="current-password"
             required
-            placeholder="••••••••"
+            placeholder="password"
             className="flex h-11 w-full rounded-lg border border-input bg-background px-3.5 pr-10 text-sm text-foreground transition-colors placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 focus:ring-offset-background disabled:opacity-50"
           />
           <button
