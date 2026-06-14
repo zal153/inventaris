@@ -123,20 +123,20 @@ export function ProductSearchSelect({
           {/* Modal Container */}
           <div
             ref={containerRef}
-            className="w-full bg-card border border-border md:rounded-xl rounded-t-2xl shadow-xl flex flex-col max-h-[85vh] md:max-h-[70vh] md:max-w-lg overflow-hidden transition-all duration-200 transform animate-slide-up"
+            className="w-full bg-card border border-border md:rounded-xl rounded-t-2xl shadow-xl flex flex-col max-h-[85vh] md:max-h-[70vh] md:max-w-lg overflow-hidden transition-all duration-200 animate-scale-in"
           >
             {/* Modal Header */}
-            <div className="flex items-center justify-between p-4 border-b border-border">
+            <div className="flex items-center justify-between pt-5 pb-4 px-5 border-b border-border">
               <div className="flex items-center gap-2">
-                <Package className="h-5 w-5 text-primary" />
-                <h3 className="font-bold text-sm text-foreground">Pilih Barang</h3>
+                <Package className="h-5 w-5 text-primary flex-shrink-0" />
+                <h3 className="font-bold text-sm text-foreground leading-none">Pilih Barang</h3>
               </div>
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
-                className="rounded-lg p-1.5 hover:bg-muted text-muted-foreground transition"
+                className="rounded-lg p-1.5 hover:bg-muted text-muted-foreground transition flex items-center justify-center"
               >
-                <X className="h-5 w-5" />
+                <X className="h-4 w-4" />
               </button>
             </div>
 
@@ -150,7 +150,7 @@ export function ProductSearchSelect({
                   placeholder="Ketik nama atau kode barang..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full rounded-lg border border-border bg-card pl-9 pr-8 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary placeholder:text-muted-foreground"
+                  className="w-full rounded-lg border border-border bg-card pl-9 pr-8 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 placeholder:text-muted-foreground transition-all"
                 />
                 {searchQuery && (
                   <button
