@@ -95,7 +95,7 @@ export async function createStockOut(
   const raw = {
     productId: formData.get("productId") as string,
     jumlah: formData.get("jumlah") ? Number(formData.get("jumlah")) : 0,
-    tujuan: (formData.get("tujuan") as string) || null,
+    tujuan: (formData.get("tujuan") as string) || "",
     tanggal: formData.get("tanggal") ? new Date(formData.get("tanggal") as string) : new Date(),
     catatan: (formData.get("catatan") as string) || null,
   };

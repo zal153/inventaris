@@ -49,7 +49,7 @@ export type StockInFormData = z.infer<typeof stockInSchema>;
 export const stockOutSchema = z.object({
   productId: z.string().min(1, "Barang wajib dipilih"),
   jumlah: z.coerce.number().int().min(1, "Jumlah minimal 1"),
-  tujuan: z.string().optional().nullable(),
+  tujuan: z.string().min(1, "Tujuan pengeluaran wajib dipilih"),
   tanggal: z.coerce.date(),
   catatan: z.string().optional().nullable(),
 });

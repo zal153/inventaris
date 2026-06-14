@@ -170,6 +170,9 @@ export function StockOutForm({ products }: StockOutFormProps) {
                 <option value="Kebutuhan Internal">Kebutuhan Internal Gudang</option>
                 <option value="Lain-lain">Lain-lain</option>
               </select>
+              {state?.errors?.tujuan && (
+                <p className="text-xs text-destructive mt-1">{state.errors.tujuan[0]}</p>
+              )}
             </div>
           </div>
 
