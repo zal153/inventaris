@@ -6,6 +6,7 @@ import { Loader2, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { ProductSearchSelect } from "@/components/shared/ProductSearchSelect";
 
 interface StockOutFormProps {
   products: { id: string; namaBarang: string; kodeBarang: string; stok: number; satuan: string }[];
@@ -69,21 +70,14 @@ export function StockOutForm({ products }: StockOutFormProps) {
             <label className="block text-sm font-semibold text-foreground mb-1.5">
               Pilih Barang <span className="text-destructive">*</span>
             </label>
-            <select
+            <ProductSearchSelect
               name="productId"
               value={selectedProductId}
-              onChange={(e) => setSelectedProductId(e.target.value)}
-              required
+              onChange={(id) => setSelectedProductId(id)}
+              products={products}
               disabled={isPending}
-              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50"
-            >
-              <option value="">Cari / Pilih Barang</option>
-              {products.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.namaBarang} ({p.kodeBarang}) — Tersedia: {p.stok} {p.satuan}
-                </option>
-              ))}
-            </select>
+              required
+            />
             {state?.errors?.productId && (
               <p className="text-xs text-destructive mt-1">{state.errors.productId[0]}</p>
             )}
