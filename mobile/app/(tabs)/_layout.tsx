@@ -29,26 +29,16 @@ export default function TabLayout() {
           backgroundColor: colorScheme === 'dark' ? '#0f172a' : '#ffffff',
           borderTopWidth: 1,
           borderTopColor: colorScheme === 'dark' ? '#1e293b' : '#e2e8f0',
-          height: Platform.OS === 'ios' ? 88 : 72,
-          paddingBottom: Platform.OS === 'ios' ? 28 : 12,
-          paddingTop: 10,
-        },
-        tabBarItemStyle: {
-          flex: 1,
-          justifyContent: 'center',
-          alignItems: 'center',
-          paddingVertical: 4,
-        },
-        tabBarIconStyle: {
-          marginBottom: 2,
+          height: Platform.OS === 'ios' ? 88 : 64,
+          paddingBottom: Platform.OS === 'ios' ? 28 : 8,
+          paddingTop: 8,
         },
         tabBarLabelStyle: {
           fontSize: 10,
           fontWeight: '600',
-          width: '100%',
-          textAlign: 'center',
-          margin: 0,
         },
+        tabBarAllowFontScaling: false,
+        tabBarLabelPosition: 'below-icon',
       }}>
       <Tabs.Screen
         name="index"
