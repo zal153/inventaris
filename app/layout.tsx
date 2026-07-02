@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "sonner";
-import { CapacitorBackHandler } from "@/components/shared/CapacitorBackHandler";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -53,7 +52,6 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen antialiased">
         {children}
-        <CapacitorBackHandler />
         <Toaster
           position="top-right"
           richColors
