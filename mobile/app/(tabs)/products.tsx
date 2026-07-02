@@ -14,7 +14,9 @@ import {
   ScrollView,
 } from "react-native";
 import { useAuth, API_URL } from "../../context/AuthContext";
-import { Search, Package, AlertTriangle, Eye, Info, Plus, Edit, Trash2, X, Save } from "lucide-react-native";
+import { Search, Package, AlertTriangle, Info, Plus, Edit, Trash2, X, Save, FileText } from "lucide-react-native";
+import * as Print from "expo-print";
+import * as Sharing from "expo-sharing";
 import axios from "axios";
 
 export default function ProductsScreen() {
@@ -208,6 +210,215 @@ export default function ProductsScreen() {
     }
   };
 
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExportPDF = async () => {
+    if (products.length === 0) {
+      Alert.alert("Info", "Tidak ada barang untuk diexport");
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      const dateStr = new Date().toLocaleDateString("id-ID", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+
+      // Hitung statistik
+      const totalBarang = products.length;
+      const totalStok = products.reduce((acc, p) => acc + (p.stok || 0), 0);
+      const stokMenipis = products.filter(p => p.stok > 0 && p.stok <= p.minimumStok).length;
+      const stokHabis = products.filter(p => p.stok === 0).length;
+
+      // Susun baris tabel HTML
+      const tableRows = products
+        .map((p, idx) => {
+          const isLow = p.stok > 0 && p.stok <= p.minimumStok;
+          const isOut = p.stok === 0;
+          let statusText = "Aman";
+          let statusColor = "#16a34a"; // green
+          if (isOut) {
+            statusText = "Habis";
+            statusColor = "#ef4444"; // red
+          } else if (isLow) {
+            statusText = "Menipis";
+            statusColor = "#d97706"; // orange
+          }
+
+          return `
+            <tr>
+              <td style="text-align: center;">${idx + 1}</td>
+              <td style="font-family: monospace; font-weight: bold;">${p.kodeBarang}</td>
+              <td>${p.namaBarang}</td>
+              <td>${p.category?.name || "Umum"}</td>
+              <td style="text-align: right;">Rp ${p.hargaJual.toLocaleString("id-ID")}</td>
+              <td style="text-align: center; font-weight: bold; color: ${statusColor};">${p.stok}</td>
+              <td>${p.satuan}</td>
+              <td style="text-align: center; font-weight: bold; color: ${statusColor};">${statusText}</td>
+            </tr>
+          `;
+        })
+        .join("");
+
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <title>Laporan Stok Barang</title>
+          <style>
+            body {
+              font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+              color: #333;
+              padding: 20px;
+              line-height: 1.4;
+            }
+            .header {
+              border-bottom: 2px solid #2563eb;
+              padding-bottom: 10px;
+              margin-bottom: 20px;
+            }
+            .title {
+              font-size: 24px;
+              font-weight: bold;
+              color: #2563eb;
+              margin: 0;
+            }
+            .subtitle {
+              font-size: 12px;
+              color: #64748b;
+              margin-top: 5px;
+            }
+            .stats-container {
+              display: flex;
+              justify-content: space-between;
+              margin-bottom: 20px;
+              background-color: #f8fafc;
+              border: 1px solid #e2e8f0;
+              border-radius: 8px;
+              padding: 15px;
+            }
+            .stat-box {
+              text-align: center;
+              flex: 1;
+            }
+            .stat-box:not(:last-child) {
+              border-right: 1px solid #cbd5e1;
+            }
+            .stat-val {
+              font-size: 18px;
+              font-weight: bold;
+              color: #0f172a;
+            }
+            .stat-label {
+              font-size: 10px;
+              color: #64748b;
+              text-transform: uppercase;
+              margin-top: 4px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 10px;
+              font-size: 11px;
+            }
+            th, td {
+              border: 1px solid #cbd5e1;
+              padding: 8px 10px;
+              text-align: left;
+            }
+            th {
+              background-color: #2563eb;
+              color: #ffffff;
+              font-weight: bold;
+              text-transform: uppercase;
+            }
+            tr:nth-child(even) {
+              background-color: #f8fafc;
+            }
+            .footer {
+              margin-top: 30px;
+              text-align: center;
+              font-size: 10px;
+              color: #94a3b8;
+              border-top: 1px solid #e2e8f0;
+              padding-top: 10px;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1 class="title">LAPORAN STOK BARANG</h1>
+            <div class="subtitle">Dicetak pada: ${dateStr} | Sistem StockSync</div>
+          </div>
+
+          <div class="stats-container">
+            <div class="stat-box">
+              <div class="stat-val">${totalBarang}</div>
+              <div class="stat-label">Jenis Barang</div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-val">${totalStok}</div>
+              <div class="stat-label">Total Stok Fisik</div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-val" style="color: #d97706;">${stokMenipis}</div>
+              <div class="stat-label">Stok Menipis</div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-val" style="color: #ef4444;">${stokHabis}</div>
+              <div class="stat-label">Stok Habis</div>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 5%; text-align: center;">No</th>
+                <th style="width: 15%;">Kode</th>
+                <th style="width: 30%;">Nama Barang</th>
+                <th style="width: 15%;">Kategori</th>
+                <th style="width: 12%; text-align: right;">Harga Jual</th>
+                <th style="width: 8%; text-align: center;">Stok</th>
+                <th style="width: 7%;">Satuan</th>
+                <th style="width: 8%; text-align: center;">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${tableRows}
+            </tbody>
+          </table>
+
+          <div class="footer">
+            Dokumen ini dibuat otomatis oleh Aplikasi StockSync Offline Mobile Client.
+          </div>
+        </body>
+        </html>
+      `;
+
+      // Generate PDF file
+      const { uri } = await Print.printToFileAsync({ html: htmlContent });
+      
+      // Share PDF file
+      await Sharing.shareAsync(uri, {
+        mimeType: "application/pdf",
+        dialogTitle: "Laporan Stok Barang",
+        UTI: "com.adobe.pdf",
+      });
+
+    } catch (err) {
+      console.error("Gagal export PDF:", err);
+      Alert.alert("Error", "Gagal mengekspor laporan ke PDF");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const formatRupiah = (val: number) => {
     return `Rp ${val.toLocaleString("id-ID")}`;
   };
@@ -318,16 +529,32 @@ export default function ProductsScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Search Header */}
-      <View style={styles.searchBarContainer}>
-        <Search size={18} color="#64748b" style={styles.searchIcon} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Cari berdasarkan nama, kode, atau barcode..."
-          placeholderTextColor="#94a3b8"
-          value={searchQuery}
-          onChangeText={handleSearch}
-        />
+      {/* Search and Export Header */}
+      <View style={styles.headerRow}>
+        <View style={styles.searchBarContainer}>
+          <Search size={18} color="#64748b" style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Cari barang..."
+            placeholderTextColor="#94a3b8"
+            value={searchQuery}
+            onChangeText={handleSearch}
+          />
+        </View>
+        <TouchableOpacity 
+          style={styles.exportBtn} 
+          onPress={handleExportPDF}
+          disabled={isExporting}
+        >
+          {isExporting ? (
+            <ActivityIndicator size="small" color="#2563eb" />
+          ) : (
+            <>
+              <FileText size={18} color="#2563eb" style={{ marginRight: 4 }} />
+              <Text style={styles.exportBtnText}>PDF</Text>
+            </>
+          )}
+        </TouchableOpacity>
       </View>
 
       {isLoading && products.length === 0 ? (
@@ -611,14 +838,21 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#f8fafc",
   },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 8,
+  },
   searchBarContainer: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#ffffff",
     borderRadius: 12,
     borderWidth: 1,
     borderColor: "#e2e8f0",
-    margin: 16,
     paddingHorizontal: 12,
     height: 44,
     shadowColor: "#000",
@@ -626,6 +860,28 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 2,
+    marginRight: 8,
+  },
+  exportBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#eff6ff",
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    height: 44,
+    shadowColor: "#2563eb",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  exportBtnText: {
+    color: "#2563eb",
+    fontSize: 13,
+    fontWeight: "700",
   },
   searchIcon: {
     marginRight: 8,
