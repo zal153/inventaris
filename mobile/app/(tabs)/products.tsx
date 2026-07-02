@@ -17,6 +17,7 @@ import { useAuth, API_URL } from "../../context/AuthContext";
 import { Search, Package, AlertTriangle, Info, Plus, Edit, Trash2, X, Save, FileText } from "lucide-react-native";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
+import * as FileSystem from "expo-file-system";
 import axios from "axios";
 
 export default function ProductsScreen() {
@@ -220,7 +221,10 @@ export default function ProductsScreen() {
 
     setIsExporting(true);
     try {
-      const dateStr = new Date().toLocaleDateString("id-ID", {
+      const now = new Date();
+      
+      // Tanggal cetak format lengkap untuk header dokumen
+      const dateStr = now.toLocaleDateString("id-ID", {
         weekday: "long",
         year: "numeric",
         month: "long",
@@ -229,13 +233,20 @@ export default function ProductsScreen() {
         minute: "2-digit",
       });
 
+      // Tanggal cetak format aman untuk nama berkas (E.g., 02-07-2026)
+      const day = String(now.getDate()).padStart(2, "0");
+      const month = String(now.getMonth() + 1).padStart(2, "0");
+      const year = now.getFullYear();
+      const fileDateStr = `${day}-${month}-${year}`;
+      const customFileName = `Laporan Stok Barang - ${fileDateStr}.pdf`;
+
       // Hitung statistik
       const totalBarang = products.length;
       const totalStok = products.reduce((acc, p) => acc + (p.stok || 0), 0);
       const stokMenipis = products.filter(p => p.stok > 0 && p.stok <= p.minimumStok).length;
       const stokHabis = products.filter(p => p.stok === 0).length;
 
-      // Susun baris tabel HTML
+      // Susun baris tabel HTML (Hanya No, Kode, Nama Barang, Stok, Status)
       const tableRows = products
         .map((p, idx) => {
           const isLow = p.stok > 0 && p.stok <= p.minimumStok;
@@ -255,10 +266,7 @@ export default function ProductsScreen() {
               <td style="text-align: center;">${idx + 1}</td>
               <td style="font-family: monospace; font-weight: bold;">${p.kodeBarang}</td>
               <td>${p.namaBarang}</td>
-              <td>${p.category?.name || "Umum"}</td>
-              <td style="text-align: right;">Rp ${p.hargaJual.toLocaleString("id-ID")}</td>
               <td style="text-align: center; font-weight: bold; color: ${statusColor};">${p.stok}</td>
-              <td>${p.satuan}</td>
               <td style="text-align: center; font-weight: bold; color: ${statusColor};">${statusText}</td>
             </tr>
           `;
@@ -383,14 +391,11 @@ export default function ProductsScreen() {
           <table class="data-table">
             <thead>
               <tr>
-                <th style="width: 5%; text-align: center;">No</th>
-                <th style="width: 15%;">Kode</th>
-                <th style="width: 30%;">Nama Barang</th>
-                <th style="width: 15%;">Kategori</th>
-                <th style="width: 12%; text-align: right;">Harga Jual</th>
-                <th style="width: 8%; text-align: center;">Stok</th>
-                <th style="width: 7%;">Satuan</th>
-                <th style="width: 8%; text-align: center;">Status</th>
+                <th style="width: 8%; text-align: center;">No</th>
+                <th style="width: 22%;">Kode</th>
+                <th style="width: 46%;">Nama Barang</th>
+                <th style="width: 12%; text-align: center;">Stok</th>
+                <th style="width: 12%; text-align: center;">Status</th>
               </tr>
             </thead>
             <tbody>
@@ -405,11 +410,18 @@ export default function ProductsScreen() {
         </html>
       `;
 
-      // Generate PDF file
+      // Generate temporary PDF file
       const { uri } = await Print.printToFileAsync({ html: htmlContent });
       
-      // Share PDF file
-      await Sharing.shareAsync(uri, {
+      // Copy the generated PDF to a file path with our custom name
+      const customUri = `${FileSystem.documentDirectory}${customFileName}`;
+      await FileSystem.copyAsync({
+        from: uri,
+        to: customUri
+      });
+
+      // Share PDF file using the custom Uri
+      await Sharing.shareAsync(customUri, {
         mimeType: "application/pdf",
         dialogTitle: "Laporan Stok Barang",
         UTI: "com.adobe.pdf",
