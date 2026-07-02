@@ -14,36 +14,57 @@ import {
 import { useAuth, API_URL } from "../context/AuthContext";
 import { Package, Lock, Mail, Eye, EyeOff } from "lucide-react-native";
 import axios from "axios";
+import { useForm, Controller } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
+
+const loginSchema = z.object({
+  email: z
+    .string()
+    .min(1, "Email wajib diisi")
+    .email("Format email tidak valid"),
+  password: z
+    .string()
+    .min(1, "Kata sandi wajib diisi")
+    .min(4, "Kata sandi minimal 4 karakter"),
+});
+
+type LoginFormData = z.infer<typeof loginSchema>;
 
 export default function LoginScreen() {
   const { login } = useAuth();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const handleLogin = async () => {
-    if (!email || !password) {
-      setErrorMsg("Email dan password wajib diisi");
-      return;
-    }
+  const {
+    control,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<LoginFormData>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: {
+      email: "",
+      password: "",
+    },
+  });
 
+  const onSubmit = async (data: LoginFormData) => {
     setIsLoading(true);
     setErrorMsg(null);
 
     try {
       const response = await axios.post(`${API_URL}/auth/login`, {
-        email,
-        password,
+        email: data.email,
+        password: data.password,
       });
 
-      const { data } = response;
+      const { data: resData } = response;
 
-      if (data.success && data.token && data.user) {
-        await login(data.token, data.user);
+      if (resData.success && resData.token && resData.user) {
+        await login(resData.token, resData.user);
       } else {
-        setErrorMsg(data.message || "Gagal masuk, silakan coba lagi.");
+        setErrorMsg(resData.message || "Gagal masuk, silakan coba lagi.");
       }
     } catch (err: any) {
       console.error("Login request error:", err);
@@ -84,59 +105,79 @@ export default function LoginScreen() {
           {/* Email Input */}
           <View style={styles.inputLabelGroup}>
             <Text style={styles.inputLabel}>Alamat Email</Text>
-            <View style={styles.inputWrapper}>
-              <Mail size={18} color="#94a3b8" style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="E.g., admin@stocksync.local"
-                placeholderTextColor="#94a3b8"
-                keyboardType="email-address"
-                autoCapitalize="none"
-                value={email}
-                onChangeText={(text) => {
-                  setEmail(text);
-                  setErrorMsg(null);
-                }}
-                editable={!isLoading}
-              />
-            </View>
+            <Controller
+              control={control}
+              name="email"
+              render={({ field: { onChange, onBlur, value } }) => (
+                <View style={[styles.inputWrapper, errors.email && styles.inputError]}>
+                  <Mail size={18} color="#94a3b8" style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="E.g., admin@stocksync.local"
+                    placeholderTextColor="#94a3b8"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    onBlur={onBlur}
+                    onChangeText={(text) => {
+                      onChange(text);
+                      setErrorMsg(null);
+                    }}
+                    value={value}
+                    editable={!isLoading}
+                  />
+                </View>
+              )}
+            />
+            {errors.email && (
+              <Text style={styles.fieldErrorText}>{errors.email.message}</Text>
+            )}
           </View>
 
           {/* Password Input */}
           <View style={styles.inputLabelGroup}>
             <Text style={styles.inputLabel}>Kata Sandi</Text>
-            <View style={styles.inputWrapper}>
-              <Lock size={18} color="#94a3b8" style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Masukkan kata sandi..."
-                placeholderTextColor="#94a3b8"
-                secureTextEntry={!showPassword}
-                autoCapitalize="none"
-                value={password}
-                onChangeText={(text) => {
-                  setPassword(text);
-                  setErrorMsg(null);
-                }}
-                editable={!isLoading}
-              />
-              <TouchableOpacity
-                onPress={() => setShowPassword(!showPassword)}
-                style={styles.eyeBtn}
-              >
-                {showPassword ? (
-                  <EyeOff size={18} color="#94a3b8" />
-                ) : (
-                  <Eye size={18} color="#94a3b8" />
-                )}
-              </TouchableOpacity>
-            </View>
+            <Controller
+              control={control}
+              name="password"
+              render={({ field: { onChange, onBlur, value } }) => (
+                <View style={[styles.inputWrapper, errors.password && styles.inputError]}>
+                  <Lock size={18} color="#94a3b8" style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Masukkan kata sandi..."
+                    placeholderTextColor="#94a3b8"
+                    secureTextEntry={!showPassword}
+                    autoCapitalize="none"
+                    onBlur={onBlur}
+                    onChangeText={(text) => {
+                      onChange(text);
+                      setErrorMsg(null);
+                    }}
+                    value={value}
+                    editable={!isLoading}
+                  />
+                  <TouchableOpacity
+                    onPress={() => setShowPassword(!showPassword)}
+                    style={styles.eyeBtn}
+                  >
+                    {showPassword ? (
+                      <EyeOff size={18} color="#94a3b8" />
+                    ) : (
+                      <Eye size={18} color="#94a3b8" />
+                    )}
+                  </TouchableOpacity>
+                </View>
+              )}
+            />
+            {errors.password && (
+              <Text style={styles.fieldErrorText}>{errors.password.message}</Text>
+            )}
           </View>
 
           {/* Login Button */}
           <TouchableOpacity
             style={[styles.loginBtn, isLoading && styles.loginBtnDisabled]}
-            onPress={handleLogin}
+            onPress={handleSubmit(onSubmit)}
             disabled={isLoading}
           >
             {isLoading ? (
@@ -245,6 +286,15 @@ const styles = StyleSheet.create({
     backgroundColor: "#f8fafc",
     paddingHorizontal: 12,
     height: 48,
+  },
+  inputError: {
+    borderColor: "#ef4444",
+  },
+  fieldErrorText: {
+    color: "#ef4444",
+    fontSize: 11,
+    marginTop: 4,
+    fontWeight: "500",
   },
   inputIcon: {
     marginRight: 10,

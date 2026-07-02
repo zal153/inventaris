@@ -1,10 +1,7 @@
-import { utils, write, writeFile } from "xlsx";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
-
 // ── Export to Excel ──────────────────────────────────
-export function exportToExcel(data: any[], fileName: string) {
+export async function exportToExcel(data: any[], fileName: string) {
   try {
+    const { utils, writeFile } = await import("xlsx");
     const worksheet = utils.json_to_sheet(data);
     const workbook = utils.book_new();
     utils.book_append_sheet(workbook, worksheet, "Sheet1");
@@ -17,13 +14,16 @@ export function exportToExcel(data: any[], fileName: string) {
 }
 
 // ── Export to PDF ────────────────────────────────────
-export function exportToPDF(
+export async function exportToPDF(
   title: string,
   headers: string[],
   rows: any[][],
   fileName: string
 ) {
   try {
+    const { default: jsPDF } = await import("jspdf");
+    const { default: autoTable } = await import("jspdf-autotable");
+
     const doc = new jsPDF({
       orientation: "portrait",
       unit: "mm",

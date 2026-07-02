@@ -4,12 +4,17 @@ import { getMobileUser } from "@/lib/auth";
 import { stockInSchema } from "@/lib/validations";
 import { generateStockInCode } from "@/actions/stock-in.actions";
 import { revalidatePath, revalidateTag } from "next/cache";
+import { logger } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
+  const start = Date.now();
+  logger.info("API mobile stock-in POST initiated");
+
   try {
     // 1. Otentikasi User
     const user = await getMobileUser(request);
     if (!user) {
+      logger.warn("API mobile stock-in POST - Unauthorized");
       return NextResponse.json(
         { success: false, message: "Unauthorized" },
         { status: 401 }
@@ -29,6 +34,9 @@ export async function POST(request: NextRequest) {
 
     const result = stockInSchema.safeParse(raw);
     if (!result.success) {
+      logger.warn("API mobile stock-in POST validation failed", {
+        errors: result.error.flatten().fieldErrors,
+      });
       return NextResponse.json(
         {
           success: false,
@@ -46,6 +54,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!product) {
+      logger.warn("API mobile stock-in POST - Product not found", { productId: raw.productId });
       return NextResponse.json(
         { success: false, message: "Barang tidak ditemukan" },
         { status: 404 }
@@ -95,13 +104,23 @@ export async function POST(request: NextRequest) {
     revalidatePath("/dashboard");
     revalidateTag("products");
 
+    logger.info("API mobile stock-in POST completed successfully", {
+      status: 200,
+      duration: `${Date.now() - start}ms`,
+      kodeTransaksi: code,
+      productId: raw.productId,
+      productName: product.namaBarang,
+      qty: raw.jumlah,
+      userId: user.id,
+    });
+
     return NextResponse.json({
       success: true,
       message: "Barang masuk berhasil dicatat",
       kodeTransaksi: code,
     });
   } catch (error) {
-    console.error("Error API mobile stock-in POST:", error);
+    logger.error("API mobile stock-in POST failed", {}, error);
     return NextResponse.json(
       { success: false, message: "Terjadi kesalahan internal server" },
       { status: 500 }

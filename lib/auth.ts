@@ -2,6 +2,14 @@ import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import prisma from "@/lib/prisma";
 
+if (!process.env.JWT_SECRET) {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("CRITICAL: JWT_SECRET environment variable is missing!");
+  } else {
+    console.warn("WARNING: JWT_SECRET is missing. Falling back to default insecure key for development.");
+  }
+}
+
 const SECRET_KEY = new TextEncoder().encode(
   process.env.JWT_SECRET || "stocksync-offline-secret-key-2024-very-secure"
 );
@@ -40,7 +48,7 @@ export async function setSessionCookie(payload: SessionPayload): Promise<void> {
   const cookieStore = await cookies();
   cookieStore.set(COOKIE_NAME, token, {
     httpOnly: true,
-    secure: false, // localhost, no HTTPS
+    secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
     maxAge: 60 * 60 * 24 * 7, // 7 days

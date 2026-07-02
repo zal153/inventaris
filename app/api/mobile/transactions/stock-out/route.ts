@@ -4,12 +4,17 @@ import { getMobileUser } from "@/lib/auth";
 import { stockOutSchema } from "@/lib/validations";
 import { generateStockOutCode } from "@/actions/stock-out.actions";
 import { revalidatePath, revalidateTag } from "next/cache";
+import { logger } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
+  const start = Date.now();
+  logger.info("API mobile stock-out POST initiated");
+
   try {
     // 1. Otentikasi User
     const user = await getMobileUser(request);
     if (!user) {
+      logger.warn("API mobile stock-out POST - Unauthorized");
       return NextResponse.json(
         { success: false, message: "Unauthorized" },
         { status: 401 }
@@ -29,6 +34,9 @@ export async function POST(request: NextRequest) {
 
     const result = stockOutSchema.safeParse(raw);
     if (!result.success) {
+      logger.warn("API mobile stock-out POST validation failed", {
+        errors: result.error.flatten().fieldErrors,
+      });
       return NextResponse.json(
         {
           success: false,
@@ -46,6 +54,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!product) {
+      logger.warn("API mobile stock-out POST - Product not found", { productId: raw.productId });
       return NextResponse.json(
         { success: false, message: "Barang tidak ditemukan" },
         { status: 404 }
@@ -53,6 +62,12 @@ export async function POST(request: NextRequest) {
     }
 
     if (product.stok < raw.jumlah) {
+      logger.warn("API mobile stock-out POST - Insufficient stock", {
+        productId: raw.productId,
+        productName: product.namaBarang,
+        currentStock: product.stok,
+        requestedQty: raw.jumlah,
+      });
       return NextResponse.json(
         {
           success: false,
@@ -104,6 +119,9 @@ export async function POST(request: NextRequest) {
     });
 
     if (!success) {
+      logger.warn("API mobile stock-out POST - Concurrency conflict / Insufficient stock during transaction lock", {
+        productId: raw.productId,
+      });
       return NextResponse.json(
         {
           success: false,
@@ -119,13 +137,23 @@ export async function POST(request: NextRequest) {
     revalidatePath("/dashboard");
     revalidateTag("products");
 
+    logger.info("API mobile stock-out POST completed successfully", {
+      status: 200,
+      duration: `${Date.now() - start}ms`,
+      kodeTransaksi: code,
+      productId: raw.productId,
+      productName: product.namaBarang,
+      qty: raw.jumlah,
+      userId: user.id,
+    });
+
     return NextResponse.json({
       success: true,
       message: "Barang keluar berhasil dicatat",
       kodeTransaksi: code,
     });
   } catch (error) {
-    console.error("Error API mobile stock-out POST:", error);
+    logger.error("API mobile stock-out POST failed", {}, error);
     return NextResponse.json(
       { success: false, message: "Terjadi kesalahan internal server" },
       { status: 500 }

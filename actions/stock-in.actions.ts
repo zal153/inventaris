@@ -130,18 +130,18 @@ export async function createStockIn(
 
     const code = await generateStockInCode();
 
-    // Increment stock and update hargaBeli
-    await prisma.product.update({
-      where: { id: raw.productId },
-      data: {
-        stok: { increment: raw.jumlah },
-        hargaBeli: raw.hargaBeli,
-      },
-    });
+    await prisma.$transaction(async (tx) => {
+      // Increment stock and update hargaBeli
+      await tx.product.update({
+        where: { id: raw.productId },
+        data: {
+          stok: { increment: raw.jumlah },
+          hargaBeli: raw.hargaBeli,
+        },
+      });
 
-    try {
       // Create Stock In record
-      await prisma.stockIn.create({
+      await tx.stockIn.create({
         data: {
           kodeTransaksi: code,
           productId: raw.productId,
@@ -154,7 +154,7 @@ export async function createStockIn(
       });
 
       // Log activity
-      await prisma.activityLog.create({
+      await tx.activityLog.create({
         data: {
           userId: user.id,
           action: "CREATE",
@@ -162,17 +162,7 @@ export async function createStockIn(
           description: `Mencatat barang masuk: ${raw.jumlah} ${product.namaBarang} (${code})`,
         },
       });
-    } catch (writeError) {
-      // Rollback stock increment if subsequent writes fail
-      await prisma.product.update({
-        where: { id: raw.productId },
-        data: {
-          stok: { decrement: raw.jumlah },
-          hargaBeli: raw.hargaBeli, // keep updated hargaBeli even on rollback
-        },
-      });
-      throw writeError;
-    }
+    });
 
     revalidatePath("/stock-in");
     revalidatePath("/products");
@@ -224,25 +214,22 @@ export async function deleteStockIn(id: string): Promise<ActionResponse> {
       };
     }
 
-    // 3. Atomically decrement stock only if still sufficient
-    const stockUpdate = await prisma.product.updateMany({
-      where: { id: stockIn.productId, stok: { gte: stockIn.jumlah } },
-      data: { stok: { decrement: stockIn.jumlah } },
-    });
+    await prisma.$transaction(async (tx) => {
+      // 3. Atomically decrement stock only if still sufficient
+      const stockUpdate = await tx.product.updateMany({
+        where: { id: stockIn.productId, stok: { gte: stockIn.jumlah } },
+        data: { stok: { decrement: stockIn.jumlah } },
+      });
 
-    if (stockUpdate.count === 0) {
-      return {
-        success: false,
-        message: `Stok tidak mencukupi untuk membatalkan transaksi ini.`,
-      };
-    }
+      if (stockUpdate.count === 0) {
+        throw new Error(`Stok tidak mencukupi untuk membatalkan transaksi ini.`);
+      }
 
-    try {
       // 4. Delete Stock In transaction
-      await prisma.stockIn.delete({ where: { id } });
+      await tx.stockIn.delete({ where: { id } });
 
       // 5. Log activity
-      await prisma.activityLog.create({
+      await tx.activityLog.create({
         data: {
           userId: user.id,
           action: "DELETE",
@@ -250,14 +237,7 @@ export async function deleteStockIn(id: string): Promise<ActionResponse> {
           description: `Menghapus transaksi barang masuk: ${stockIn.jumlah} ${stockIn.product.namaBarang} (${stockIn.kodeTransaksi})`,
         },
       });
-    } catch (writeError) {
-      // Rollback stock decrement if delete/log fails
-      await prisma.product.update({
-        where: { id: stockIn.productId },
-        data: { stok: { increment: stockIn.jumlah } },
-      });
-      throw writeError;
-    }
+    });
 
     revalidatePath("/stock-in");
     revalidatePath("/products");

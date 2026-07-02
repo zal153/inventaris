@@ -2,22 +2,26 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getMobileUser } from "@/lib/auth";
 import { productSchema } from "@/lib/validations";
+import { logger } from "@/lib/logger";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const start = Date.now();
+  const { id } = await params;
+  logger.info("API mobile product ID GET initiated", { id });
+
   try {
     // 1. Otentikasi User
     const user = await getMobileUser(request);
     if (!user) {
+      logger.warn("API mobile product ID GET - Unauthorized");
       return NextResponse.json(
         { success: false, message: "Unauthorized" },
         { status: 401 }
       );
     }
-
-    const { id } = await params;
 
     // 2. Cari produk berdasarkan ID atau Barcode
     const product = await prisma.product.findFirst({
@@ -40,18 +44,27 @@ export async function GET(
     });
 
     if (!product) {
+      logger.warn("API mobile product ID GET - Product not found", { id });
       return NextResponse.json(
         { success: false, message: "Barang tidak ditemukan" },
         { status: 404 }
       );
     }
 
+    logger.info("API mobile product ID GET completed", {
+      status: 200,
+      duration: `${Date.now() - start}ms`,
+      productId: product.id,
+      productName: product.namaBarang,
+      userId: user.id,
+    });
+
     return NextResponse.json({
       success: true,
       product,
     });
   } catch (error) {
-    console.error("Error API mobile product ID GET:", error);
+    logger.error("API mobile product ID GET failed", { id }, error);
     return NextResponse.json(
       { success: false, message: "Terjadi kesalahan internal server" },
       { status: 500 }
@@ -63,17 +76,21 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const start = Date.now();
+  const { id } = await params;
+  logger.info("API mobile product ID PUT initiated", { id });
+
   try {
     // 1. Otentikasi User & Cek Role (ADMIN)
     const user = await getMobileUser(request);
     if (!user) {
+      logger.warn("API mobile product ID PUT - Unauthorized");
       return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
     }
     if (user.role !== "ADMIN") {
+      logger.warn("API mobile product ID PUT - Forbidden - Not Admin", { userId: user.id });
       return NextResponse.json({ success: false, message: "Hanya Admin yang dapat mengelola barang" }, { status: 403 });
     }
-
-    const { id } = await params;
 
     // 2. Cek apakah barang ada
     const existingProduct = await prisma.product.findFirst({
@@ -81,6 +98,7 @@ export async function PUT(
     });
 
     if (!existingProduct) {
+      logger.warn("API mobile product ID PUT - Product not found", { id });
       return NextResponse.json(
         { success: false, message: "Barang tidak ditemukan" },
         { status: 404 }
@@ -91,6 +109,9 @@ export async function PUT(
     const body = await request.json();
     const result = productSchema.safeParse(body);
     if (!result.success) {
+      logger.warn("API mobile product ID PUT validation failed", {
+        errors: result.error.flatten().fieldErrors,
+      });
       return NextResponse.json(
         {
           success: false,
@@ -114,6 +135,9 @@ export async function PUT(
       });
 
       if (duplicateCode) {
+        logger.warn("API mobile product ID PUT - Duplicate code error", {
+          kodeBarang: raw.kodeBarang,
+        });
         return NextResponse.json(
           { success: false, message: `Kode barang "${raw.kodeBarang}" sudah digunakan` },
           { status: 400 }
@@ -137,13 +161,21 @@ export async function PUT(
       },
     });
 
+    logger.info("API mobile product ID PUT completed", {
+      status: 200,
+      duration: `${Date.now() - start}ms`,
+      productId: product.id,
+      productName: product.namaBarang,
+      userId: user.id,
+    });
+
     return NextResponse.json({
       success: true,
       message: "Barang berhasil diperbarui",
       product,
     });
   } catch (error) {
-    console.error("Error API mobile product ID PUT:", error);
+    logger.error("API mobile product ID PUT failed", { id }, error);
     return NextResponse.json(
       { success: false, message: "Terjadi kesalahan internal server" },
       { status: 500 }
@@ -155,17 +187,21 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const start = Date.now();
+  const { id } = await params;
+  logger.info("API mobile product ID DELETE initiated", { id });
+
   try {
     // 1. Otentikasi User & Cek Role (ADMIN)
     const user = await getMobileUser(request);
     if (!user) {
+      logger.warn("API mobile product ID DELETE - Unauthorized");
       return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
     }
     if (user.role !== "ADMIN") {
+      logger.warn("API mobile product ID DELETE - Forbidden - Not Admin", { userId: user.id });
       return NextResponse.json({ success: false, message: "Hanya Admin yang dapat mengelola barang" }, { status: 403 });
     }
-
-    const { id } = await params;
 
     // 2. Cek apakah barang ada
     const product = await prisma.product.findFirst({
@@ -173,6 +209,7 @@ export async function DELETE(
     });
 
     if (!product) {
+      logger.warn("API mobile product ID DELETE - Product not found", { id });
       return NextResponse.json(
         { success: false, message: "Barang tidak ditemukan" },
         { status: 404 }
@@ -195,12 +232,20 @@ export async function DELETE(
       },
     });
 
+    logger.info("API mobile product ID DELETE completed", {
+      status: 200,
+      duration: `${Date.now() - start}ms`,
+      productId: product.id,
+      productName: product.namaBarang,
+      userId: user.id,
+    });
+
     return NextResponse.json({
       success: true,
       message: "Barang berhasil dihapus",
     });
   } catch (error) {
-    console.error("Error API mobile product ID DELETE:", error);
+    logger.error("API mobile product ID DELETE failed", { id }, error);
     return NextResponse.json(
       { success: false, message: "Terjadi kesalahan internal server" },
       { status: 500 }

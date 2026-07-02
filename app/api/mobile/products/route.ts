@@ -2,12 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getMobileUser } from "@/lib/auth";
 import { productSchema } from "@/lib/validations";
+import { logger } from "@/lib/logger";
 
 export async function GET(request: NextRequest) {
+  const start = Date.now();
+  logger.info("API mobile products GET initiated", { url: request.url });
+
   try {
     // 1. Otentikasi User
     const user = await getMobileUser(request);
     if (!user) {
+      logger.warn("API mobile products GET - Unauthorized");
       return NextResponse.json(
         { success: false, message: "Unauthorized" },
         { status: 401 }
@@ -50,12 +55,19 @@ export async function GET(request: NextRequest) {
       },
     });
 
+    logger.info("API mobile products GET completed", {
+      status: 200,
+      duration: `${Date.now() - start}ms`,
+      count: products.length,
+      userId: user.id,
+    });
+
     return NextResponse.json({
       success: true,
       products,
     });
   } catch (error) {
-    console.error("Error API mobile products GET:", error);
+    logger.error("API mobile products GET failed", { url: request.url }, error);
     return NextResponse.json(
       { success: false, message: "Terjadi kesalahan internal server" },
       { status: 500 }
@@ -64,16 +76,21 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const start = Date.now();
+  logger.info("API mobile products POST initiated");
+
   try {
     // 1. Otentikasi User & Cek Role (ADMIN)
     const user = await getMobileUser(request);
     if (!user) {
+      logger.warn("API mobile products POST - Unauthorized");
       return NextResponse.json(
         { success: false, message: "Unauthorized" },
         { status: 401 }
       );
     }
     if (user.role !== "ADMIN") {
+      logger.warn("API mobile products POST - Forbidden - User is not Admin", { userId: user.id });
       return NextResponse.json(
         { success: false, message: "Hanya Admin yang dapat mengelola barang" },
         { status: 403 }
@@ -84,6 +101,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const result = productSchema.safeParse(body);
     if (!result.success) {
+      logger.warn("API mobile products POST validation failed", {
+        errors: result.error.flatten().fieldErrors,
+      });
       return NextResponse.json(
         {
           success: false,
@@ -105,6 +125,9 @@ export async function POST(request: NextRequest) {
     });
 
     if (existing) {
+      logger.warn("API mobile products POST duplicate code error", {
+        kodeBarang: raw.kodeBarang,
+      });
       return NextResponse.json(
         { success: false, message: `Kode barang "${raw.kodeBarang}" sudah digunakan` },
         { status: 400 }
@@ -129,13 +152,22 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    logger.info("API mobile products POST completed", {
+      status: 200,
+      duration: `${Date.now() - start}ms`,
+      productId: product.id,
+      productName: product.namaBarang,
+      productCode: product.kodeBarang,
+      userId: user.id,
+    });
+
     return NextResponse.json({
       success: true,
       message: "Barang berhasil ditambahkan",
       product,
     });
   } catch (error) {
-    console.error("Error API mobile products POST:", error);
+    logger.error("API mobile products POST failed", {}, error);
     return NextResponse.json(
       { success: false, message: "Terjadi kesalahan internal server" },
       { status: 500 }

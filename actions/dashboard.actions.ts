@@ -13,7 +13,9 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     totalCategories,
     stockInToday,
     stockOutToday,
-    allProducts,
+    totalProducts,
+    outOfStockCount,
+    lowStockResult,
   ] = await Promise.all([
     prisma.category.count(),
     prisma.stockIn.count({
@@ -26,17 +28,19 @@ export async function getDashboardStats(): Promise<DashboardStats> {
         tanggal: { gte: today, lt: tomorrow },
       },
     }),
-    prisma.product.findMany({
+    prisma.product.count({
       where: { isActive: true },
-      select: { stok: true, minimumStok: true },
     }),
+    prisma.product.count({
+      where: { isActive: true, stok: 0 },
+    }),
+    prisma.$queryRaw<any[]>`
+      SELECT COUNT(*) as count FROM "Product"
+      WHERE "isActive" = true AND stok > 0 AND stok <= "minimumStok"
+    `,
   ]);
 
-  const totalProducts = allProducts.length;
-  const lowStockCount = allProducts.filter(
-    (p) => p.stok > 0 && p.stok <= p.minimumStok
-  ).length;
-  const outOfStockCount = allProducts.filter((p) => p.stok === 0).length;
+  const lowStockCount = Number(lowStockResult[0]?.count || 0);
 
   return {
     totalProducts,
@@ -49,23 +53,27 @@ export async function getDashboardStats(): Promise<DashboardStats> {
 }
 
 export async function getLowStockProducts(): Promise<LowStockProduct[]> {
-  const products = await prisma.product.findMany({
-    where: { isActive: true },
-    select: {
-      id: true,
-      kodeBarang: true,
-      namaBarang: true,
-      stok: true,
-      minimumStok: true,
-      stokIdeal: true,
-      satuan: true,
-    },
-    orderBy: { stok: "asc" },
-  });
-
-  return products
-    .filter((p) => p.stok <= p.minimumStok)
-    .slice(0, 10);
+  try {
+    const products = await prisma.$queryRaw<any[]>`
+      SELECT id, "kodeBarang", "namaBarang", stok, "minimumStok", "stokIdeal", satuan
+      FROM "Product"
+      WHERE "isActive" = true AND stok <= "minimumStok"
+      ORDER BY stok ASC
+      LIMIT 10
+    `;
+    return products.map((p) => ({
+      id: p.id,
+      kodeBarang: p.kodeBarang,
+      namaBarang: p.namaBarang,
+      stok: Number(p.stok),
+      minimumStok: Number(p.minimumStok),
+      stokIdeal: Number(p.stokIdeal),
+      satuan: p.satuan,
+    }));
+  } catch (error) {
+    console.error("Error fetching low stock products:", error);
+    return [];
+  }
 }
 
 export async function getMonthlyStockData(): Promise<MonthlyStockData[]> {

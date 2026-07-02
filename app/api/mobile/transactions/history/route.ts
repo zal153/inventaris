@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getMobileUser } from "@/lib/auth";
 import { getTransactionHistory } from "@/actions/report.actions";
+import { logger } from "@/lib/logger";
 
 export async function GET(request: NextRequest) {
+  const start = Date.now();
+  logger.info("API mobile transaction history GET initiated", { url: request.url });
+
   try {
     // 1. Otentikasi User
     const user = await getMobileUser(request);
     if (!user) {
+      logger.warn("API mobile transaction history GET - Unauthorized");
       return NextResponse.json(
         { success: false, message: "Unauthorized" },
         { status: 401 }
@@ -32,12 +37,19 @@ export async function GET(request: NextRequest) {
     // 3. Ambil Riwayat Transaksi
     const history = await getTransactionHistory(filters);
 
+    logger.info("API mobile transaction history GET completed successfully", {
+      status: 200,
+      duration: `${Date.now() - start}ms`,
+      count: history.length,
+      userId: user.id,
+    });
+
     return NextResponse.json({
       success: true,
       history,
     });
   } catch (error) {
-    console.error("Error API mobile transaction history GET:", error);
+    logger.error("Error API mobile transaction history GET failed", { url: request.url }, error);
     return NextResponse.json(
       { success: false, message: "Terjadi kesalahan internal server" },
       { status: 500 }

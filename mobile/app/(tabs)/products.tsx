@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
   StyleSheet,
   Text,
@@ -12,124 +12,393 @@ import {
   Alert,
   Modal,
   ScrollView,
+  Animated,
 } from "react-native";
 import { useAuth, API_URL } from "../../context/AuthContext";
-import { Search, Package, AlertTriangle, Info, Plus, Edit, Trash2, X, Save, FileText } from "lucide-react-native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 import axios from "axios";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useForm, Controller } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
+
+// Standalone memoized component for Product Card to optimize VirtializedList performance
+interface ProductItemProps {
+  item: any;
+  isSelected: boolean;
+  onToggle: (id: string) => void;
+  isAdmin: boolean;
+  onEdit: (item: any) => void;
+  onDelete: (id: string, name: string) => void;
+}
+
+const ProductItem = React.memo(({ item, isSelected, onToggle, isAdmin, onEdit, onDelete }: ProductItemProps) => {
+  const isLowStock = item.stok > 0 && item.stok <= item.minimumStok;
+  const isOutOfStock = item.stok === 0;
+
+  // Get Rak Location
+  const locationStr = item.lokasiRak || item.rak || item.deskripsi?.match(/rak\s*:\s*([^\n,]+)/i)?.[1] || "";
+
+  return (
+    <View style={styles.productCard}>
+      <View style={styles.cardHeader}>
+        <View style={styles.itemInfo}>
+          <Text style={styles.itemName}>{item.namaBarang}</Text>
+          <Text style={styles.itemCode}>{item.kodeBarang}</Text>
+          <View style={styles.metaBadgeRow}>
+            <View style={styles.categoryBadge}>
+              <Text style={styles.categoryBadgeText}>{item.category?.name || "Umum"}</Text>
+            </View>
+            {locationStr ? (
+              <View style={styles.rakBadge}>
+                <MaterialCommunityIcons name="locker" size={10} color="#64748b" style={{ marginRight: 2 }} />
+                <Text style={styles.rakBadgeText}>Rak: {locationStr}</Text>
+              </View>
+            ) : null}
+          </View>
+        </View>
+        
+        <View
+          style={[
+            styles.stockBadge,
+            isOutOfStock
+              ? styles.badgeDanger
+              : isLowStock
+              ? styles.badgeWarning
+              : styles.badgeSuccess,
+          ]}
+        >
+          <Text
+            style={[
+              styles.stockVal,
+              isOutOfStock
+                ? styles.textDanger
+                : isLowStock
+                ? styles.textWarning
+                : styles.textSuccess,
+            ]}
+          >
+            {item.stok}
+          </Text>
+          <Text
+            style={[
+              styles.unitVal,
+              isOutOfStock
+                ? styles.textDanger
+                : isLowStock
+                ? styles.textWarning
+                : styles.textSuccess,
+            ]}
+          >
+            {item.satuan}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.cardDivider} />
+
+      <View style={styles.cardDetails}>
+        <View style={styles.detailCol}>
+          <Text style={styles.detailLabel}>Limit Minimum</Text>
+          <Text style={styles.detailVal}>{item.minimumStok} {item.satuan}</Text>
+        </View>
+        <View style={styles.detailCol}>
+          <Text style={styles.detailLabel}>Limit Ideal</Text>
+          <Text style={styles.detailVal}>{item.stokIdeal} {item.satuan}</Text>
+        </View>
+        
+        <TouchableOpacity 
+          style={styles.infoBtn} 
+          onPress={() => onToggle(item.id)}
+        >
+          <MaterialCommunityIcons 
+            name={isSelected ? "chevron-up" : "information-outline"} 
+            size={18} 
+            color="#2563eb" 
+          />
+        </TouchableOpacity>
+      </View>
+
+      {isSelected && (
+        <View style={styles.expandedDetails}>
+          <View style={styles.expandedRow}>
+            <Text style={styles.expandedLabel}>Barcode:</Text>
+            <Text style={styles.expandedVal}>{item.barcode || "—"}</Text>
+          </View>
+          <View style={styles.expandedRow}>
+            <Text style={styles.expandedLabel}>Lokasi Rak:</Text>
+            <Text style={styles.expandedVal}>{locationStr || "—"}</Text>
+          </View>
+          {item.deskripsi && (
+            <View style={[styles.expandedRow, { flexDirection: "column", alignItems: "flex-start", marginTop: 4 }]}>
+              <Text style={styles.expandedLabel}>Deskripsi:</Text>
+              <Text style={[styles.expandedVal, { marginTop: 2, color: "#64748b" }]}>{item.deskripsi}</Text>
+            </View>
+          )}
+
+          {isAdmin && (
+            <View style={styles.actionRow}>
+              <TouchableOpacity 
+                style={[styles.actionBtn, styles.editBtn]} 
+                onPress={() => onEdit(item)}
+              >
+                <MaterialCommunityIcons name="pencil-outline" size={14} color="#2563eb" style={{ marginRight: 4 }} />
+                <Text style={styles.editBtnText}>Edit</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.actionBtn, styles.deleteBtn]} 
+                onPress={() => onDelete(item.id, item.namaBarang)}
+              >
+                <MaterialCommunityIcons name="trash-can-outline" size={14} color="#ef4444" style={{ marginRight: 4 }} />
+                <Text style={styles.deleteBtnText}>Hapus</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      )}
+    </View>
+  );
+});
+
+const productFormSchema = z.object({
+  kodeBarang: z.string().min(1, "Kode barang wajib diisi"),
+  namaBarang: z.string().min(1, "Nama barang wajib diisi"),
+  categoryId: z.string().min(1, "Kategori wajib dipilih"),
+  satuan: z.string().min(1, "Satuan wajib diisi"),
+  stok: z.number().min(0, "Stok awal minimal 0"),
+  minimumStok: z.number().min(0, "Minimum stok minimal 0"),
+  stokIdeal: z.number().min(0, "Stok ideal minimal 0"),
+  barcode: z.string().nullable().optional(),
+  deskripsi: z.string().nullable().optional(),
+  lokasiRak: z.string().nullable().optional(),
+});
+
+type ProductFormData = z.infer<typeof productFormSchema>;
 
 export default function ProductsScreen() {
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
+  const queryClient = useQueryClient();
 
-  const [products, setProducts] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
 
-  // Form states
-  const [categories, setCategories] = useState<any[]>([]);
+  // Sorting & Filtering parameters
+  const [sortType, setSortType] = useState<"nama-asc" | "nama-desc" | "stok-asc" | "stok-desc" | "stok-menipis">("nama-asc");
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>("all");
+  const [sortModalVisible, setSortModalVisible] = useState(false);
+
+  // Modal display states
   const [modalVisible, setModalVisible] = useState(false);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
   const [productId, setProductId] = useState("");
-  const [kodeBarang, setKodeBarang] = useState("");
-  const [namaBarang, setNamaBarang] = useState("");
-  const [categoryId, setCategoryId] = useState("");
-  const [categoryName, setCategoryName] = useState("");
-  const [satuan, setSatuan] = useState("pcs");
-  const [hargaBeli, setHargaBeli] = useState("0");
-  const [hargaJual, setHargaJual] = useState("0");
-  const [stok, setStok] = useState("0");
-  const [minimumStok, setMinimumStok] = useState("5");
-  const [stokIdeal, setStokIdeal] = useState("20");
-  const [barcode, setBarcode] = useState("");
-  const [deskripsi, setDeskripsi] = useState("");
+  const [categoryName, setCategoryName] = useState("Pilih Kategori");
 
-  const fetchProducts = useCallback(async (query = "") => {
-    try {
-      const res = await axios.get(`${API_URL}/products?search=${query}`);
+  // Barcode Scanner states for search
+  const [isScanningSearch, setIsScanningSearch] = useState(false);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [scannedCode, setScannedCode] = useState(false);
+
+  // Shimmer loading animation ref
+  const shimmerAnim = useRef(new Animated.Value(0.3)).current;
+
+  // React Queries
+  const { data: products = [], isLoading: isLoadingProducts, refetch: refetchProducts, isFetching: isRefreshingProducts } = useQuery<any[]>({
+    queryKey: ["products", searchQuery],
+    queryFn: async () => {
+      const res = await axios.get(`${API_URL}/products?search=${searchQuery}`);
       if (res.data.success) {
-        setProducts(res.data.products || []);
+        return res.data.products || [];
       }
-    } catch (err) {
-      console.error("Gagal memuat barang:", err);
-    } finally {
-      setIsLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+      throw new Error(res.data.message || "Gagal memuat barang");
+    },
+  });
 
-  const fetchCategories = useCallback(async () => {
-    try {
+  const { data: categories = [] } = useQuery<any[]>({
+    queryKey: ["categories"],
+    queryFn: async () => {
       const res = await axios.get(`${API_URL}/categories`);
       if (res.data.success) {
-        setCategories(res.data.categories || []);
+        return res.data.categories || [];
       }
-    } catch (err) {
-      console.error("Gagal memuat kategori:", err);
-    }
-  }, []);
+      throw new Error(res.data.message || "Gagal memuat kategori");
+    },
+  });
 
+  // React Hook Form
+  const {
+    control,
+    handleSubmit,
+    reset,
+    setValue,
+    watch,
+    formState: { errors },
+  } = useForm<ProductFormData>({
+    resolver: zodResolver(productFormSchema),
+  });
+
+  const categoryId = watch("categoryId");
+
+  // React Query Mutations
+  const saveProductMutation = useMutation({
+    mutationFn: async (payload: any) => {
+      if (isEditing) {
+        return axios.put(`${API_URL}/products/${productId}`, {
+          ...payload,
+          hargaBeli: 0,
+          hargaJual: 0,
+          barcode: payload.barcode?.trim() || null,
+          deskripsi: payload.deskripsi?.trim() || null,
+          lokasiRak: payload.lokasiRak?.trim() || null,
+        });
+      } else {
+        return axios.post(`${API_URL}/products`, {
+          ...payload,
+          hargaBeli: 0,
+          hargaJual: 0,
+          barcode: payload.barcode?.trim() || null,
+          deskripsi: payload.deskripsi?.trim() || null,
+          lokasiRak: payload.lokasiRak?.trim() || null,
+        });
+      }
+    },
+    onSuccess: (res) => {
+      if (res.data.success) {
+        Alert.alert("Sukses", isEditing ? "Barang berhasil diperbarui" : "Barang berhasil ditambahkan");
+        setModalVisible(false);
+        queryClient.invalidateQueries({ queryKey: ["products"] });
+        queryClient.invalidateQueries({ queryKey: ["dashboardData"] });
+      } else {
+        Alert.alert("Error", res.data.message || "Terjadi kesalahan");
+      }
+    },
+    onError: (err: any) => {
+      console.error("Gagal menyimpan barang:", err);
+      const errMsg = err.response?.data?.message || "Terjadi kesalahan pada server";
+      Alert.alert("Error", errMsg);
+    },
+  });
+
+  const deleteProductMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return axios.delete(`${API_URL}/products/${id}`);
+    },
+    onSuccess: (res) => {
+      if (res.data.success) {
+        Alert.alert("Sukses", "Barang berhasil dihapus");
+        queryClient.invalidateQueries({ queryKey: ["products"] });
+        queryClient.invalidateQueries({ queryKey: ["dashboardData"] });
+      } else {
+        Alert.alert("Error", res.data.message || "Gagal menghapus barang");
+      }
+    },
+    onError: (err: any) => {
+      console.error("Gagal menghapus barang:", err);
+      const errMsg = err.response?.data?.message || "Gagal menghapus barang";
+      Alert.alert("Error", errMsg);
+    },
+  });
+
+  // Shimmer animation effect
   useEffect(() => {
-    fetchProducts();
-    fetchCategories();
-  }, [fetchProducts, fetchCategories]);
+    let anim: Animated.CompositeAnimation | null = null;
+    if (isLoadingProducts) {
+      anim = Animated.loop(
+        Animated.sequence([
+          Animated.timing(shimmerAnim, {
+            toValue: 0.8,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+          Animated.timing(shimmerAnim, {
+            toValue: 0.3,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      anim.start();
+    } else {
+      shimmerAnim.setValue(1);
+    }
+    return () => {
+      if (anim) anim.stop();
+    };
+  }, [isLoadingProducts, shimmerAnim]);
 
   // Handle live search
   const handleSearch = (text: string) => {
     setSearchQuery(text);
-    setIsLoading(true);
-    fetchProducts(text);
   };
 
   const onRefresh = () => {
-    setRefreshing(true);
-    fetchProducts(searchQuery);
+    refetchProducts();
+  };
+
+  // Open Barcode Scanner for Search
+  const startSearchScan = async () => {
+    if (!cameraPermission) return;
+    if (!cameraPermission.granted) {
+      const { granted } = await requestCameraPermission();
+      if (!granted) {
+        Alert.alert("Izin Kamera Ditolak", "Izin kamera diperlukan untuk memindai barcode.");
+        return;
+      }
+    }
+    setScannedCode(false);
+    setIsScanningSearch(true);
+  };
+
+  const handleSearchBarcodeScanned = ({ data }: { data: string }) => {
+    setScannedCode(true);
+    setIsScanningSearch(false);
+    handleSearch(data);
   };
 
   const openAddModal = () => {
     setIsEditing(false);
     setProductId("");
-    setKodeBarang("");
-    setNamaBarang("");
-    setCategoryId(categories[0]?.id || "");
+    reset({
+      kodeBarang: "",
+      namaBarang: "",
+      categoryId: categories[0]?.id || "",
+      satuan: "pcs",
+      stok: 0,
+      minimumStok: 5,
+      stokIdeal: 20,
+      barcode: "",
+      deskripsi: "",
+      lokasiRak: "",
+    });
     setCategoryName(categories[0]?.name || "Pilih Kategori");
-    setSatuan("pcs");
-    setHargaBeli("0");
-    setHargaJual("0");
-    setStok("0");
-    setMinimumStok("5");
-    setStokIdeal("20");
-    setBarcode("");
-    setDeskripsi("");
     setModalVisible(true);
   };
 
-  const openEditModal = (item: any) => {
+  const openEditModal = useCallback((item: any) => {
     setIsEditing(true);
     setProductId(item.id);
-    setKodeBarang(item.kodeBarang);
-    setNamaBarang(item.namaBarang);
-    setCategoryId(item.categoryId);
+    reset({
+      kodeBarang: item.kodeBarang,
+      namaBarang: item.namaBarang,
+      categoryId: item.categoryId,
+      satuan: item.satuan || "pcs",
+      stok: item.stok || 0,
+      minimumStok: item.minimumStok || 5,
+      stokIdeal: item.stokIdeal || 20,
+      barcode: item.barcode || "",
+      deskripsi: item.deskripsi || "",
+      lokasiRak: item.lokasiRak || item.rak || "",
+    });
     setCategoryName(item.category?.name || "Pilih Kategori");
-    setSatuan(item.satuan || "pcs");
-    setHargaBeli(String(item.hargaBeli || 0));
-    setHargaJual(String(item.hargaJual || 0));
-    setStok(String(item.stok || 0));
-    setMinimumStok(String(item.minimumStok || 5));
-    setStokIdeal(String(item.stokIdeal || 20));
-    setBarcode(item.barcode || "");
-    setDeskripsi(item.deskripsi || "");
     setModalVisible(true);
-  };
+  }, [reset]);
 
-  const handleDeleteProduct = (id: string, name: string) => {
+  const handleDeleteProduct = useCallback((id: string, name: string) => {
     Alert.alert(
       "Hapus Barang",
       `Apakah Anda yakin ingin menghapus barang "${name}"?`,
@@ -138,78 +407,13 @@ export default function ProductsScreen() {
         {
           text: "Hapus",
           style: "destructive",
-          onPress: async () => {
-            try {
-              const res = await axios.delete(`${API_URL}/products/${id}`);
-              if (res.data.success) {
-                Alert.alert("Sukses", "Barang berhasil dihapus");
-                fetchProducts(searchQuery);
-              }
-            } catch (err: any) {
-              console.error("Gagal menghapus barang:", err);
-              const errMsg = err.response?.data?.message || "Gagal menghapus barang";
-              Alert.alert("Error", errMsg);
-            }
+          onPress: () => {
+            deleteProductMutation.mutate(id);
           },
         },
       ]
     );
-  };
-
-  const handleSaveProduct = async () => {
-    if (!kodeBarang.trim()) {
-      Alert.alert("Validasi Gagal", "Kode barang wajib diisi");
-      return;
-    }
-    if (!namaBarang.trim()) {
-      Alert.alert("Validasi Gagal", "Nama barang wajib diisi");
-      return;
-    }
-    if (!categoryId) {
-      Alert.alert("Validasi Gagal", "Kategori wajib dipilih");
-      return;
-    }
-    if (!satuan.trim()) {
-      Alert.alert("Validasi Gagal", "Satuan wajib diisi");
-      return;
-    }
-
-    const payload = {
-      kodeBarang: kodeBarang.trim(),
-      namaBarang: namaBarang.trim(),
-      categoryId,
-      satuan: satuan.trim(),
-      hargaBeli: Number(hargaBeli) || 0,
-      hargaJual: Number(hargaJual) || 0,
-      stok: Number(stok) || 0,
-      minimumStok: Number(minimumStok) || 0,
-      stokIdeal: Number(stokIdeal) || 0,
-      barcode: barcode.trim() || null,
-      deskripsi: deskripsi.trim() || null,
-    };
-
-    setIsSubmitting(true);
-    try {
-      let res;
-      if (isEditing) {
-        res = await axios.put(`${API_URL}/products/${productId}`, payload);
-      } else {
-        res = await axios.post(`${API_URL}/products`, payload);
-      }
-
-      if (res.data.success) {
-        Alert.alert("Sukses", isEditing ? "Barang berhasil diperbarui" : "Barang berhasil ditambahkan");
-        setModalVisible(false);
-        fetchProducts(searchQuery);
-      }
-    } catch (err: any) {
-      console.error("Gagal menyimpan barang:", err);
-      const errMsg = err.response?.data?.message || "Terjadi kesalahan pada server";
-      Alert.alert("Error", errMsg);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+  }, [deleteProductMutation]);
 
   const [isExporting, setIsExporting] = useState(false);
 
@@ -222,8 +426,6 @@ export default function ProductsScreen() {
     setIsExporting(true);
     try {
       const now = new Date();
-      
-      // Tanggal cetak format lengkap untuk header dokumen
       const dateStr = now.toLocaleDateString("id-ID", {
         weekday: "long",
         year: "numeric",
@@ -233,32 +435,29 @@ export default function ProductsScreen() {
         minute: "2-digit",
       });
 
-      // Tanggal cetak format aman untuk nama berkas (E.g., 02-07-2026)
       const day = String(now.getDate()).padStart(2, "0");
       const month = String(now.getMonth() + 1).padStart(2, "0");
       const year = now.getFullYear();
       const fileDateStr = `${day}-${month}-${year}`;
       const customFileName = `Laporan Stok Barang - ${fileDateStr}.pdf`;
 
-      // Hitung statistik
       const totalBarang = products.length;
       const totalStok = products.reduce((acc, p) => acc + (p.stok || 0), 0);
       const stokMenipis = products.filter(p => p.stok > 0 && p.stok <= p.minimumStok).length;
       const stokHabis = products.filter(p => p.stok === 0).length;
 
-      // Susun baris tabel HTML (Hanya No, Kode, Nama Barang, Stok, Status)
       const tableRows = products
         .map((p, idx) => {
           const isLow = p.stok > 0 && p.stok <= p.minimumStok;
           const isOut = p.stok === 0;
           let statusText = "Aman";
-          let statusColor = "#16a34a"; // green
+          let statusColor = "#16a34a";
           if (isOut) {
             statusText = "Habis";
-            statusColor = "#ef4444"; // red
+            statusColor = "#ef4444";
           } else if (isLow) {
             statusText = "Menipis";
-            statusColor = "#d97706"; // orange
+            statusColor = "#f59e0b";
           }
 
           return `
@@ -366,7 +565,6 @@ export default function ProductsScreen() {
             <h1 class="title">LAPORAN STOK BARANG</h1>
             <div class="subtitle">Dicetak pada: ${dateStr} | Sistem StockSync</div>
           </div>
-
           <table class="stats-table">
             <tr>
               <td>
@@ -378,8 +576,8 @@ export default function ProductsScreen() {
                 <div class="stat-label">Total Stok Fisik</div>
               </td>
               <td>
-                <div class="stat-val" style="color: #d97706;">${stokMenipis}</div>
-                <div class="stat-label" style="color: #d97706;">Stok Menipis</div>
+                <div class="stat-val" style="color: #f59e0b;">${stokMenipis}</div>
+                <div class="stat-label" style="color: #f59e0b;">Stok Menipis</div>
               </td>
               <td>
                 <div class="stat-val" style="color: #ef4444;">${stokHabis}</div>
@@ -387,7 +585,6 @@ export default function ProductsScreen() {
               </td>
             </tr>
           </table>
-
           <table class="data-table">
             <thead>
               <tr>
@@ -402,7 +599,6 @@ export default function ProductsScreen() {
               ${tableRows}
             </tbody>
           </table>
-
           <div class="footer">
             Dokumen ini dibuat otomatis oleh Aplikasi StockSync Offline Mobile Client.
           </div>
@@ -410,17 +606,9 @@ export default function ProductsScreen() {
         </html>
       `;
 
-      // Generate temporary PDF file
       const { uri } = await Print.printToFileAsync({ html: htmlContent });
-      
-      // Copy the generated PDF to a file path with our custom name
       const customUri = `${FileSystem.documentDirectory}${customFileName}`;
-      await FileSystem.copyAsync({
-        from: uri,
-        to: customUri
-      });
-
-      // Share PDF file using the custom Uri
+      await FileSystem.copyAsync({ from: uri, to: customUri });
       await Sharing.shareAsync(customUri, {
         mimeType: "application/pdf",
         dialogTitle: "Laporan Stok Barang",
@@ -429,137 +617,78 @@ export default function ProductsScreen() {
 
     } catch (err: any) {
       console.error("Gagal export PDF:", err);
-      Alert.alert(
-        "Error",
-        "Gagal mengekspor laporan ke PDF: " + (err?.message || String(err))
-      );
+      Alert.alert("Error", "Gagal mengekspor laporan ke PDF");
     } finally {
       setIsExporting(false);
     }
   };
 
-  const formatRupiah = (val: number) => {
-    return `Rp ${val.toLocaleString("id-ID")}`;
+  // Client-side Filtering and Sorting logic
+  const getFilteredAndSortedProducts = () => {
+    return products
+      .filter((p) => {
+        if (selectedCategoryFilter !== "all" && p.categoryId !== selectedCategoryFilter) {
+          return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        if (sortType === "nama-asc") return a.namaBarang.localeCompare(b.namaBarang);
+        if (sortType === "nama-desc") return b.namaBarang.localeCompare(a.namaBarang);
+        if (sortType === "stok-asc") return a.stok - b.stok;
+        if (sortType === "stok-desc") return b.stok - a.stok;
+        if (sortType === "stok-menipis") {
+          const aRatio = a.stok - a.minimumStok;
+          const bRatio = b.stok - b.minimumStok;
+          return aRatio - bRatio;
+        }
+        return 0;
+      });
   };
 
-  // Render Single Product Item
-  const renderProductItem = ({ item }: { item: any }) => {
-    const isLowStock = item.stok > 0 && item.stok <= item.minimumStok;
-    const isOutOfStock = item.stok === 0;
+  const processedProducts = getFilteredAndSortedProducts();
 
+  // Stable toggle function for card selection using useCallback
+  const handleToggleProduct = useCallback((id: string) => {
+    setSelectedProduct((prev: any) => (prev === id ? null : id));
+  }, []);
+
+  // Render Product Item Card using memoized component
+  const renderProductItem = useCallback(({ item }: { item: any }) => {
     return (
-      <View style={styles.productCard}>
-        <View style={styles.cardHeader}>
-          <View style={styles.itemInfo}>
-            <Text style={styles.itemName}>{item.namaBarang}</Text>
-            <Text style={styles.itemCode}>{item.kodeBarang}</Text>
-          </View>
-          <View style={styles.stockBadge}>
-            <Text
-              style={[
-                styles.stockVal,
-                isOutOfStock ? styles.textDanger : isLowStock ? styles.textWarning : styles.textSuccess,
-              ]}
-            >
-              {item.stok}
-            </Text>
-            <Text style={styles.unitVal}>{item.satuan}</Text>
-          </View>
-        </View>
-
-        <View style={styles.cardDivider} />
-
-        <View style={styles.cardDetails}>
-          <View style={styles.detailCol}>
-            <Text style={styles.detailLabel}>Harga Jual</Text>
-            <Text style={styles.detailVal}>{formatRupiah(item.hargaJual)}</Text>
-          </View>
-          <View style={styles.detailCol}>
-            <Text style={styles.detailLabel}>Kategori</Text>
-            <Text style={styles.detailVal}>{item.category?.name || "Umum"}</Text>
-          </View>
-          
-          <TouchableOpacity 
-            style={styles.infoBtn} 
-            onPress={() => setSelectedProduct(selectedProduct?.id === item.id ? null : item)}
-          >
-            <Info size={18} color="#2563eb" />
-          </TouchableOpacity>
-        </View>
-
-        {/* Expandable Info Detail Drawer */}
-        {selectedProduct?.id === item.id && (
-          <View style={styles.expandedDetails}>
-            <View style={styles.expandedRow}>
-              <Text style={styles.expandedLabel}>Harga Beli:</Text>
-              <Text style={styles.expandedVal}>{formatRupiah(item.hargaBeli)}</Text>
-            </View>
-            <View style={styles.expandedRow}>
-              <Text style={styles.expandedLabel}>Barcode:</Text>
-              <Text style={styles.expandedVal}>{item.barcode || "—"}</Text>
-            </View>
-            <View style={styles.expandedRow}>
-              <Text style={styles.expandedLabel}>Minimum Stok:</Text>
-              <Text style={styles.expandedVal}>{item.minimumStok} {item.satuan}</Text>
-            </View>
-            <View style={styles.expandedRow}>
-              <Text style={styles.expandedLabel}>Stok Ideal:</Text>
-              <Text style={styles.expandedVal}>{item.stokIdeal} {item.satuan}</Text>
-            </View>
-            {item.deskripsi && (
-              <View style={[styles.expandedRow, { flexDirection: "column", alignItems: "flex-start", marginTop: 4 }]}>
-                <Text style={styles.expandedLabel}>Deskripsi:</Text>
-                <Text style={[styles.expandedVal, { marginTop: 2, color: "#64748b" }]}>{item.deskripsi}</Text>
-              </View>
-            )}
-
-            {isAdmin && (
-              <View style={styles.actionRow}>
-                <TouchableOpacity 
-                  style={[styles.actionBtn, styles.editBtn]} 
-                  onPress={() => openEditModal(item)}
-                >
-                  <Edit size={14} color="#2563eb" style={{ marginRight: 6 }} />
-                  <Text style={styles.editBtnText}>Edit</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[styles.actionBtn, styles.deleteBtn]} 
-                  onPress={() => handleDeleteProduct(item.id, item.namaBarang)}
-                >
-                  <Trash2 size={14} color="#ef4444" style={{ marginRight: 6 }} />
-                  <Text style={styles.deleteBtnText}>Hapus</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        )}
-
-        {(isLowStock || isOutOfStock) && (
-          <View style={[styles.warningBanner, isOutOfStock ? styles.bannerDanger : styles.bannerWarning]}>
-            <AlertTriangle size={14} color={isOutOfStock ? "#ef4444" : "#d97706"} />
-            <Text style={[styles.warningText, isOutOfStock ? styles.warningTextDanger : styles.warningTextWarning]}>
-              {isOutOfStock ? "Stok habis! Silakan lakukan barang masuk." : "Stok menipis di bawah jumlah minimum."}
-            </Text>
-          </View>
-        )}
-      </View>
+      <ProductItem
+        item={item}
+        isSelected={selectedProduct === item.id}
+        onToggle={handleToggleProduct}
+        isAdmin={isAdmin}
+        onEdit={openEditModal}
+        onDelete={handleDeleteProduct}
+      />
     );
-  };
+  }, [selectedProduct, handleToggleProduct, isAdmin, openEditModal, handleDeleteProduct]);
 
   return (
     <View style={styles.container}>
-      {/* Search and Export Header */}
+      {/* Search, Sort, and Barcode scan tools */}
       <View style={styles.headerRow}>
         <View style={styles.searchBarContainer}>
-          <Search size={18} color="#64748b" style={styles.searchIcon} />
+          <MaterialCommunityIcons name="magnify" size={20} color="#64748b" style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Cari barang..."
+            placeholder="Cari nama / kode barang..."
             placeholderTextColor="#94a3b8"
             value={searchQuery}
             onChangeText={handleSearch}
           />
+          <TouchableOpacity style={styles.scanSearchBtn} onPress={startSearchScan}>
+            <MaterialCommunityIcons name="barcode-scan" size={20} color="#2563eb" />
+          </TouchableOpacity>
         </View>
+        
+        <TouchableOpacity style={styles.sortBtn} onPress={() => setSortModalVisible(true)}>
+          <MaterialCommunityIcons name="tune" size={20} color="#64748b" />
+        </TouchableOpacity>
+
         <TouchableOpacity 
           style={styles.exportBtn} 
           onPress={handleExportPDF}
@@ -568,39 +697,65 @@ export default function ProductsScreen() {
           {isExporting ? (
             <ActivityIndicator size="small" color="#2563eb" />
           ) : (
-            <>
-              <FileText size={18} color="#2563eb" style={{ marginRight: 4 }} />
-              <Text style={styles.exportBtnText}>PDF</Text>
-            </>
+            <MaterialCommunityIcons name="file-pdf-box" size={22} color="#2563eb" />
           )}
         </TouchableOpacity>
       </View>
 
-      {isLoading && products.length === 0 ? (
+      {/* Horizontal Scrollable Category Filter Chips */}
+      <View style={styles.filterChipContainer}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipScroll}>
+          <TouchableOpacity
+            style={[styles.chip, selectedCategoryFilter === "all" && styles.chipActive]}
+            onPress={() => setSelectedCategoryFilter("all")}
+          >
+            <Text style={[styles.chipText, selectedCategoryFilter === "all" && styles.chipTextActive]}>
+              Semua
+            </Text>
+          </TouchableOpacity>
+          {categories.map((cat: any) => (
+            <TouchableOpacity
+              key={cat.id}
+              style={[styles.chip, selectedCategoryFilter === cat.id && styles.chipActive]}
+              onPress={() => setSelectedCategoryFilter(cat.id)}
+            >
+              <Text style={[styles.chipText, selectedCategoryFilter === cat.id && styles.chipTextActive]}>
+                {cat.name}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+
+      {isLoadingProducts && products.length === 0 ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#2563eb" />
-          <Text style={styles.loadingText}>Memuat daftar barang...</Text>
+          <Animated.View style={[styles.productCardSkeleton, { opacity: shimmerAnim }]} />
+          <Animated.View style={[styles.productCardSkeleton, { opacity: shimmerAnim }]} />
+          <Animated.View style={[styles.productCardSkeleton, { opacity: shimmerAnim }]} />
         </View>
       ) : (
         <FlatList
-          data={products}
+          data={processedProducts}
           keyExtractor={(item) => item.id}
           renderItem={renderProductItem}
           contentContainerStyle={styles.listContent}
+          initialNumToRender={8}
+          maxToRenderPerBatch={10}
+          windowSize={5}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#2563eb"]} />
+            <RefreshControl refreshing={isRefreshingProducts} onRefresh={onRefresh} colors={["#2563eb"]} />
           }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Package size={48} color="#cbd5e1" style={{ marginBottom: 12 }} />
+              <MaterialCommunityIcons name="package-variant" size={48} color="#cbd5e1" style={{ marginBottom: 12 }} />
               <Text style={styles.emptyText}>Barang tidak ditemukan</Text>
-              <Text style={styles.emptySubText}>Coba gunakan kata kunci lainnya</Text>
+              <Text style={styles.emptySubText}>Gunakan kata kunci atau filter lainnya</Text>
             </View>
           }
         />
       )}
 
-      {/* ─── ADD/EDIT BARANG MODAL ─── */}
+      {/* ─── ADD/EDIT BARANG MODAL (NO PRICE) ─── */}
       <Modal
         animationType="slide"
         transparent={true}
@@ -614,7 +769,7 @@ export default function ProductsScreen() {
                 {isEditing ? "Edit Barang" : "Tambah Barang Baru"}
               </Text>
               <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.closeBtn}>
-                <X size={20} color="#64748b" />
+                <MaterialCommunityIcons name="close" size={22} color="#64748b" />
               </TouchableOpacity>
             </View>
 
@@ -622,150 +777,246 @@ export default function ProductsScreen() {
               {/* Kode Barang */}
               <View style={styles.formGroup}>
                 <Text style={styles.formLabel}>Kode Barang *</Text>
-                <TextInput
-                  style={[styles.formInput, isEditing && styles.disabledInput]}
-                  value={kodeBarang}
-                  onChangeText={setKodeBarang}
-                  placeholder="E.g., BRG-001"
-                  placeholderTextColor="#94a3b8"
-                  editable={!isEditing && !isSubmitting}
+                <Controller
+                  control={control}
+                  name="kodeBarang"
+                  render={({ field: { onChange, onBlur, value } }) => (
+                    <TextInput
+                      style={[
+                        styles.formInput,
+                        errors.kodeBarang && styles.inputError,
+                        isEditing && styles.disabledInput
+                      ]}
+                      onBlur={onBlur}
+                      onChangeText={onChange}
+                      value={value}
+                      placeholder="E.g., BRG-001"
+                      placeholderTextColor="#94a3b8"
+                      editable={!isEditing && !saveProductMutation.isPending}
+                    />
+                  )}
                 />
+                {errors.kodeBarang && (
+                  <Text style={styles.fieldErrorText}>{errors.kodeBarang.message}</Text>
+                )}
               </View>
 
               {/* Nama Barang */}
               <View style={styles.formGroup}>
                 <Text style={styles.formLabel}>Nama Barang *</Text>
-                <TextInput
-                  style={styles.formInput}
-                  value={namaBarang}
-                  onChangeText={setNamaBarang}
-                  placeholder="E.g., Bawang Merah 100gr"
-                  placeholderTextColor="#94a3b8"
-                  editable={!isSubmitting}
+                <Controller
+                  control={control}
+                  name="namaBarang"
+                  render={({ field: { onChange, onBlur, value } }) => (
+                    <TextInput
+                      style={[styles.formInput, errors.namaBarang && styles.inputError]}
+                      onBlur={onBlur}
+                      onChangeText={onChange}
+                      value={value}
+                      placeholder="E.g., Bawang Merah 100gr"
+                      placeholderTextColor="#94a3b8"
+                      editable={!saveProductMutation.isPending}
+                    />
+                  )}
                 />
+                {errors.namaBarang && (
+                  <Text style={styles.fieldErrorText}>{errors.namaBarang.message}</Text>
+                )}
               </View>
 
               {/* Kategori Selector */}
               <View style={styles.formGroup}>
                 <Text style={styles.formLabel}>Kategori *</Text>
-                <TouchableOpacity
-                  style={styles.selectTrigger}
-                  onPress={() => setShowCategoryModal(true)}
-                  disabled={isSubmitting}
-                >
-                  <Text style={styles.selectTriggerText}>{categoryName}</Text>
-                </TouchableOpacity>
+                <Controller
+                  control={control}
+                  name="categoryId"
+                  render={({ field: { value } }) => (
+                    <TouchableOpacity
+                      style={[styles.selectTrigger, errors.categoryId && styles.inputError]}
+                      onPress={() => setShowCategoryModal(true)}
+                      disabled={saveProductMutation.isPending}
+                    >
+                      <Text style={styles.selectTriggerText}>{categoryName}</Text>
+                    </TouchableOpacity>
+                  )}
+                />
+                {errors.categoryId && (
+                  <Text style={styles.fieldErrorText}>{errors.categoryId.message}</Text>
+                )}
               </View>
 
               {/* Satuan */}
               <View style={styles.formGroup}>
                 <Text style={styles.formLabel}>Satuan *</Text>
-                <TextInput
-                  style={styles.formInput}
-                  value={satuan}
-                  onChangeText={setSatuan}
-                  placeholder="E.g., pcs, Kg, Karton"
-                  placeholderTextColor="#94a3b8"
-                  editable={!isSubmitting}
+                <Controller
+                  control={control}
+                  name="satuan"
+                  render={({ field: { onChange, onBlur, value } }) => (
+                    <TextInput
+                      style={[styles.formInput, errors.satuan && styles.inputError]}
+                      onBlur={onBlur}
+                      onChangeText={onChange}
+                      value={value}
+                      placeholder="E.g., pcs, Kg, Karton"
+                      placeholderTextColor="#94a3b8"
+                      editable={!saveProductMutation.isPending}
+                    />
+                  )}
                 />
+                {errors.satuan && (
+                  <Text style={styles.fieldErrorText}>{errors.satuan.message}</Text>
+                )}
               </View>
 
               {/* Barcode */}
               <View style={styles.formGroup}>
                 <Text style={styles.formLabel}>Barcode</Text>
-                <TextInput
-                  style={styles.formInput}
-                  value={barcode}
-                  onChangeText={setBarcode}
-                  placeholder="E.g., 899123456789"
-                  placeholderTextColor="#94a3b8"
-                  editable={!isSubmitting}
+                <Controller
+                  control={control}
+                  name="barcode"
+                  render={({ field: { onChange, onBlur, value } }) => (
+                    <TextInput
+                      style={[styles.formInput, errors.barcode && styles.inputError]}
+                      onBlur={onBlur}
+                      onChangeText={(val) => onChange(val || "")}
+                      value={value || ""}
+                      placeholder="E.g., 899123456789"
+                      placeholderTextColor="#94a3b8"
+                      editable={!saveProductMutation.isPending}
+                    />
+                  )}
                 />
+                {errors.barcode && (
+                  <Text style={styles.fieldErrorText}>{errors.barcode.message}</Text>
+                )}
               </View>
 
-              {/* Harga Beli & Harga Jual */}
-              <View style={styles.formRow}>
-                <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
-                  <Text style={styles.formLabel}>Harga Beli</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    value={hargaBeli}
-                    onChangeText={setHargaBeli}
-                    keyboardType="numeric"
-                    placeholder="0"
-                    placeholderTextColor="#94a3b8"
-                    editable={!isSubmitting}
-                  />
-                </View>
-                <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
-                  <Text style={styles.formLabel}>Harga Jual</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    value={hargaJual}
-                    onChangeText={setHargaJual}
-                    keyboardType="numeric"
-                    placeholder="0"
-                    placeholderTextColor="#94a3b8"
-                    editable={!isSubmitting}
-                  />
-                </View>
+              {/* Lokasi Rak */}
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Lokasi Rak (Jika ada)</Text>
+                <Controller
+                  control={control}
+                  name="lokasiRak"
+                  render={({ field: { onChange, onBlur, value } }) => (
+                    <TextInput
+                      style={[styles.formInput, errors.lokasiRak && styles.inputError]}
+                      onBlur={onBlur}
+                      onChangeText={(val) => onChange(val || "")}
+                      value={value || ""}
+                      placeholder="E.g., Rak A-1"
+                      placeholderTextColor="#94a3b8"
+                      editable={!saveProductMutation.isPending}
+                    />
+                  )}
+                />
+                {errors.lokasiRak && (
+                  <Text style={styles.fieldErrorText}>{errors.lokasiRak.message}</Text>
+                )}
               </View>
 
-              {/* Stok & Minimum Stok */}
+              {/* Stok & Minimum Stok (No Price) */}
               <View style={styles.formRow}>
                 <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
                   <Text style={styles.formLabel}>Stok Awal</Text>
-                  <TextInput
-                    style={[styles.formInput, isEditing && styles.disabledInput]}
-                    value={stok}
-                    onChangeText={setStok}
-                    keyboardType="numeric"
-                    placeholder="0"
-                    placeholderTextColor="#94a3b8"
-                    editable={!isEditing && !isSubmitting}
+                  <Controller
+                    control={control}
+                    name="stok"
+                    render={({ field: { onChange, onBlur, value } }) => (
+                      <TextInput
+                        style={[
+                          styles.formInput,
+                          errors.stok && styles.inputError,
+                          isEditing && styles.disabledInput
+                        ]}
+                        onBlur={onBlur}
+                        onChangeText={(val) => onChange(val ? Number(val) : 0)}
+                        value={String(value)}
+                        keyboardType="numeric"
+                        placeholder="0"
+                        placeholderTextColor="#94a3b8"
+                        editable={!isEditing && !saveProductMutation.isPending}
+                      />
+                    )}
                   />
+                  {errors.stok && (
+                    <Text style={styles.fieldErrorText}>{errors.stok.message}</Text>
+                  )}
                 </View>
                 <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
                   <Text style={styles.formLabel}>Minimum Stok</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    value={minimumStok}
-                    onChangeText={setMinimumStok}
-                    keyboardType="numeric"
-                    placeholder="5"
-                    placeholderTextColor="#94a3b8"
-                    editable={!isSubmitting}
+                  <Controller
+                    control={control}
+                    name="minimumStok"
+                    render={({ field: { onChange, onBlur, value } }) => (
+                      <TextInput
+                        style={[styles.formInput, errors.minimumStok && styles.inputError]}
+                        onBlur={onBlur}
+                        onChangeText={(val) => onChange(val ? Number(val) : 0)}
+                        value={String(value)}
+                        keyboardType="numeric"
+                        placeholder="5"
+                        placeholderTextColor="#94a3b8"
+                        editable={!saveProductMutation.isPending}
+                      />
+                    )}
                   />
+                  {errors.minimumStok && (
+                    <Text style={styles.fieldErrorText}>{errors.minimumStok.message}</Text>
+                  )}
                 </View>
               </View>
 
               {/* Stok Ideal */}
               <View style={styles.formGroup}>
                 <Text style={styles.formLabel}>Stok Ideal</Text>
-                <TextInput
-                  style={styles.formInput}
-                  value={stokIdeal}
-                  onChangeText={setStokIdeal}
-                  keyboardType="numeric"
-                  placeholder="20"
-                  placeholderTextColor="#94a3b8"
-                  editable={!isSubmitting}
+                <Controller
+                  control={control}
+                  name="stokIdeal"
+                  render={({ field: { onChange, onBlur, value } }) => (
+                    <TextInput
+                      style={[styles.formInput, errors.stokIdeal && styles.inputError]}
+                      onBlur={onBlur}
+                      onChangeText={(val) => onChange(val ? Number(val) : 0)}
+                      value={String(value)}
+                      keyboardType="numeric"
+                      placeholder="20"
+                      placeholderTextColor="#94a3b8"
+                      editable={!saveProductMutation.isPending}
+                    />
+                  )}
                 />
+                {errors.stokIdeal && (
+                  <Text style={styles.fieldErrorText}>{errors.stokIdeal.message}</Text>
+                )}
               </View>
 
               {/* Deskripsi */}
               <View style={styles.formGroup}>
                 <Text style={styles.formLabel}>Deskripsi</Text>
-                <TextInput
-                  style={[styles.formInput, { height: 80, textAlignVertical: "top" }]}
-                  value={deskripsi}
-                  onChangeText={setDeskripsi}
-                  placeholder="Tambahkan catatan/deskripsi barang..."
-                  placeholderTextColor="#94a3b8"
-                  multiline={true}
-                  numberOfLines={3}
-                  editable={!isSubmitting}
+                <Controller
+                  control={control}
+                  name="deskripsi"
+                  render={({ field: { onChange, onBlur, value } }) => (
+                    <TextInput
+                      style={[
+                        styles.formInput,
+                        errors.deskripsi && styles.inputError,
+                        { height: 80, textAlignVertical: "top" }
+                      ]}
+                      onBlur={onBlur}
+                      onChangeText={(val) => onChange(val || "")}
+                      value={value || ""}
+                      placeholder="Tambahkan catatan/deskripsi barang..."
+                      placeholderTextColor="#94a3b8"
+                      multiline={true}
+                      numberOfLines={3}
+                      editable={!saveProductMutation.isPending}
+                    />
+                  )}
                 />
+                {errors.deskripsi && (
+                  <Text style={styles.fieldErrorText}>{errors.deskripsi.message}</Text>
+                )}
               </View>
             </ScrollView>
 
@@ -773,20 +1024,20 @@ export default function ProductsScreen() {
               <TouchableOpacity
                 style={styles.cancelBtn}
                 onPress={() => setModalVisible(false)}
-                disabled={isSubmitting}
+                disabled={saveProductMutation.isPending}
               >
                 <Text style={styles.cancelBtnText}>Batal</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.submitBtn}
-                onPress={handleSaveProduct}
-                disabled={isSubmitting}
+                onPress={handleSubmit((data) => saveProductMutation.mutate(data))}
+                disabled={saveProductMutation.isPending}
               >
-                {isSubmitting ? (
+                {saveProductMutation.isPending ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
                   <>
-                    <Save size={16} color="#fff" style={{ marginRight: 6 }} />
+                    <MaterialCommunityIcons name="content-save-outline" size={16} color="#fff" style={{ marginRight: 6 }} />
                     <Text style={styles.submitBtnText}>Simpan</Text>
                   </>
                 )}
@@ -794,6 +1045,54 @@ export default function ProductsScreen() {
             </View>
           </View>
         </View>
+      </Modal>
+
+      {/* ─── Urutkan MODAL ─── */}
+      <Modal
+        visible={sortModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSortModalVisible(false)}
+      >
+        <TouchableOpacity 
+          style={styles.modalOverlay} 
+          activeOpacity={1} 
+          onPress={() => setSortModalVisible(false)}
+        >
+          <View style={styles.sortModalContent}>
+            <View style={styles.sortModalHeader}>
+              <Text style={styles.sortModalTitle}>Urutkan Barang</Text>
+              <TouchableOpacity onPress={() => setSortModalVisible(false)}>
+                <MaterialCommunityIcons name="close" size={20} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+            
+            <TouchableOpacity style={styles.sortOption} onPress={() => { setSortType("nama-asc"); setSortModalVisible(false); }}>
+              <Text style={[styles.sortOptionText, sortType === "nama-asc" && styles.activeSortText]}>Nama (A - Z)</Text>
+              {sortType === "nama-asc" && <MaterialCommunityIcons name="check" size={18} color="#2563eb" />}
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={styles.sortOption} onPress={() => { setSortType("nama-desc"); setSortModalVisible(false); }}>
+              <Text style={[styles.sortOptionText, sortType === "nama-desc" && styles.activeSortText]}>Nama (Z - A)</Text>
+              {sortType === "nama-desc" && <MaterialCommunityIcons name="check" size={18} color="#2563eb" />}
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={styles.sortOption} onPress={() => { setSortType("stok-asc"); setSortModalVisible(false); }}>
+              <Text style={[styles.sortOptionText, sortType === "stok-asc" && styles.activeSortText]}>Stok Terendah</Text>
+              {sortType === "stok-asc" && <MaterialCommunityIcons name="check" size={18} color="#2563eb" />}
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={styles.sortOption} onPress={() => { setSortType("stok-desc"); setSortModalVisible(false); }}>
+              <Text style={[styles.sortOptionText, sortType === "stok-desc" && styles.activeSortText]}>Stok Tertinggi</Text>
+              {sortType === "stok-desc" && <MaterialCommunityIcons name="check" size={18} color="#2563eb" />}
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.sortOption} onPress={() => { setSortType("stok-menipis"); setSortModalVisible(false); }}>
+              <Text style={[styles.sortOptionText, sortType === "stok-menipis" && styles.activeSortText]}>Prioritas Stok Menipis</Text>
+              {sortType === "stok-menipis" && <MaterialCommunityIcons name="check" size={18} color="#2563eb" />}
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
       </Modal>
 
       {/* ─── NESTED CATEGORY SELECTION MODAL ─── */}
@@ -808,7 +1107,7 @@ export default function ProductsScreen() {
             <View style={styles.nestedHeader}>
               <Text style={styles.nestedTitle}>Pilih Kategori</Text>
               <TouchableOpacity onPress={() => setShowCategoryModal(false)}>
-                <X size={20} color="#64748b" />
+                <MaterialCommunityIcons name="close" size={20} color="#64748b" />
               </TouchableOpacity>
             </View>
             <FlatList
@@ -821,7 +1120,7 @@ export default function ProductsScreen() {
                     categoryId === item.id && styles.activeCategorySelect,
                   ]}
                   onPress={() => {
-                    setCategoryId(item.id);
+                    setValue("categoryId", item.id);
                     setCategoryName(item.name);
                     setShowCategoryModal(false);
                   }}
@@ -842,10 +1141,45 @@ export default function ProductsScreen() {
         </View>
       </Modal>
 
+      {/* ─── BARCODE CAMERA SEARCH MODAL ─── */}
+      {isScanningSearch && (
+        <Modal animationType="slide" transparent={false} visible={isScanningSearch}>
+          <View style={styles.scannerModal}>
+            <CameraView
+              style={StyleSheet.absoluteFillObject}
+              facing="back"
+              onBarcodeScanned={scannedCode ? undefined : handleSearchBarcodeScanned}
+              barcodeScannerSettings={{
+                barcodeTypes: ["ean13", "ean8", "code128", "qr", "upc_a"],
+              }}
+            />
+            <View style={styles.scannerOverlay}>
+              <View style={styles.scanTargetBox}>
+                <View style={styles.targetCornerTL} />
+                <View style={styles.targetCornerTR} />
+                <View style={styles.targetCornerBL} />
+                <View style={styles.targetCornerBR} />
+              </View>
+              <Text style={styles.scannerGuideText}>Arahkan kamera ke barcode barang</Text>
+              
+              <TouchableOpacity
+                style={styles.closeScannerBtn}
+                onPress={() => {
+                  setIsScanningSearch(false);
+                  setScannedCode(false);
+                }}
+              >
+                <MaterialCommunityIcons name="close-circle" size={48} color="#ffffff" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
+
       {/* ─── FLOATING ACTION BUTTON (ADMIN ONLY) ─── */}
       {isAdmin && (
         <TouchableOpacity style={styles.fabBtn} onPress={openAddModal}>
-          <Plus size={24} color="#fff" />
+          <MaterialCommunityIcons name="plus" size={24} color="#fff" />
         </TouchableOpacity>
       )}
     </View>
@@ -869,38 +1203,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#ffffff",
-    borderRadius: 12,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: "#e2e8f0",
     paddingHorizontal: 12,
-    height: 44,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    height: 48,
     marginRight: 8,
-  },
-  exportBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#eff6ff",
-    borderWidth: 1,
-    borderColor: "#bfdbfe",
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    height: 44,
-    shadowColor: "#2563eb",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
     elevation: 2,
-  },
-  exportBtnText: {
-    color: "#2563eb",
-    fontSize: 13,
-    fontWeight: "700",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
   },
   searchIcon: {
     marginRight: 8,
@@ -908,12 +1221,75 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 14,
-    color: "#0f172a",
+    color: "#1e293b",
     height: "100%",
+  },
+  scanSearchBtn: {
+    padding: 6,
+  },
+  sortBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 8,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+  },
+  exportBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: "#eff6ff",
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 2,
+    shadowColor: "#2563eb",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+  },
+  filterChipContainer: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  chipScroll: {
+    paddingHorizontal: 4,
+  },
+  chip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    marginRight: 8,
+    minHeight: 36,
+  },
+  chipActive: {
+    backgroundColor: "#2563eb",
+    borderColor: "#2563eb",
+  },
+  chipText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#64748b",
+  },
+  chipTextActive: {
+    color: "#ffffff",
   },
   listContent: {
     padding: 16,
-    paddingTop: 0,
+    paddingTop: 8,
     paddingBottom: 32,
   },
   productCard: {
@@ -922,12 +1298,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#e2e8f0",
     padding: 16,
-    marginBottom: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
+    marginBottom: 14,
     elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+  },
+  productCardSkeleton: {
+    height: 120,
+    backgroundColor: "#ffffff",
+    borderRadius: 16,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
   },
   cardHeader: {
     flexDirection: "row",
@@ -941,33 +1325,74 @@ const styles = StyleSheet.create({
   itemName: {
     fontSize: 15,
     fontWeight: "700",
-    color: "#0f172a",
+    color: "#1e293b",
   },
   itemCode: {
-    fontSize: 12,
+    fontSize: 11,
     fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
     color: "#64748b",
     marginTop: 2,
   },
+  metaBadgeRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    marginTop: 6,
+  },
+  categoryBadge: {
+    backgroundColor: "#f1f5f9",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginRight: 6,
+    marginBottom: 4,
+  },
+  categoryBadgeText: {
+    fontSize: 10,
+    color: "#475569",
+    fontWeight: "700",
+  },
+  rakBadge: {
+    backgroundColor: "#eff6ff",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    marginRight: 6,
+    marginBottom: 4,
+  },
+  rakBadgeText: {
+    fontSize: 10,
+    color: "#2563eb",
+    fontWeight: "700",
+  },
   stockBadge: {
     alignItems: "center",
-    backgroundColor: "#f8fafc",
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    minWidth: 54,
+    justifyContent: "center",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    minWidth: 64,
+  },
+  badgeSuccess: {
+    backgroundColor: "#dcfce7",
+  },
+  badgeWarning: {
+    backgroundColor: "#fef3c7",
+  },
+  badgeDanger: {
+    backgroundColor: "#fee2e2",
   },
   stockVal: {
-    fontSize: 15,
+    fontSize: 20,
     fontWeight: "800",
   },
   unitVal: {
-    fontSize: 9,
-    color: "#64748b",
-    fontWeight: "600",
+    fontSize: 10,
+    fontWeight: "700",
     textTransform: "uppercase",
+    marginTop: 2,
   },
   cardDivider: {
     height: 1,
@@ -989,20 +1414,22 @@ const styles = StyleSheet.create({
   },
   detailVal: {
     fontSize: 13,
-    fontWeight: "600",
+    fontWeight: "700",
     color: "#334155",
     marginTop: 2,
   },
   infoBtn: {
     padding: 8,
-    borderRadius: 8,
+    borderRadius: 10,
     backgroundColor: "#eff6ff",
+    alignItems: "center",
+    justifyContent: "center",
   },
   expandedDetails: {
     marginTop: 12,
     padding: 12,
     backgroundColor: "#f8fafc",
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: "#f1f5f9",
   },
@@ -1018,35 +1445,8 @@ const styles = StyleSheet.create({
   },
   expandedVal: {
     fontSize: 12,
-    fontWeight: "600",
+    fontWeight: "700",
     color: "#334155",
-  },
-  warningBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderRadius: 10,
-    padding: 10,
-    marginTop: 12,
-    borderWidth: 1,
-  },
-  bannerWarning: {
-    backgroundColor: "#fffbeb",
-    borderColor: "#fef3c7",
-  },
-  bannerDanger: {
-    backgroundColor: "#fef2f2",
-    borderColor: "#fee2e2",
-  },
-  warningText: {
-    fontSize: 11,
-    fontWeight: "600",
-    marginLeft: 6,
-  },
-  warningTextWarning: {
-    color: "#b45309",
-  },
-  warningTextDanger: {
-    color: "#b91c1c",
   },
   textSuccess: {
     color: "#16a34a",
@@ -1059,14 +1459,7 @@ const styles = StyleSheet.create({
   },
   loadingContainer: {
     flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  loadingText: {
-    marginTop: 12,
-    color: "#64748b",
-    fontSize: 14,
-    fontWeight: "500",
+    padding: 16,
   },
   emptyContainer: {
     alignItems: "center",
@@ -1074,8 +1467,8 @@ const styles = StyleSheet.create({
     paddingVertical: 64,
   },
   emptyText: {
-    fontSize: 16,
-    color: "#475569",
+    fontSize: 15,
+    color: "#1e293b",
     fontWeight: "700",
   },
   emptySubText: {
@@ -1122,7 +1515,7 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(15, 23, 42, 0.6)",
+    backgroundColor: "rgba(15, 23, 42, 0.5)",
     justifyContent: "flex-end",
   },
   modalContent: {
@@ -1144,7 +1537,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 18,
     fontWeight: "800",
-    color: "#0f172a",
+    color: "#1e293b",
   },
   closeBtn: {
     padding: 4,
@@ -1165,11 +1558,11 @@ const styles = StyleSheet.create({
     backgroundColor: "#f8fafc",
     borderWidth: 1,
     borderColor: "#e2e8f0",
-    borderRadius: 10,
+    borderRadius: 12,
     paddingHorizontal: 12,
-    height: 44,
+    height: 48,
     fontSize: 14,
-    color: "#0f172a",
+    color: "#1e293b",
   },
   disabledInput: {
     backgroundColor: "#e2e8f0",
@@ -1182,14 +1575,14 @@ const styles = StyleSheet.create({
     backgroundColor: "#f8fafc",
     borderWidth: 1,
     borderColor: "#e2e8f0",
-    borderRadius: 10,
+    borderRadius: 12,
     paddingHorizontal: 12,
-    height: 44,
+    height: 48,
     justifyContent: "center",
   },
   selectTriggerText: {
     fontSize: 14,
-    color: "#0f172a",
+    color: "#1e293b",
   },
   modalFooter: {
     flexDirection: "row",
@@ -1200,8 +1593,8 @@ const styles = StyleSheet.create({
   },
   cancelBtn: {
     flex: 1,
-    height: 44,
-    borderRadius: 10,
+    height: 48,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: "#cbd5e1",
     alignItems: "center",
@@ -1215,9 +1608,9 @@ const styles = StyleSheet.create({
   },
   submitBtn: {
     flex: 2,
-    height: 44,
+    height: 48,
     backgroundColor: "#2563eb",
-    borderRadius: 10,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
@@ -1226,6 +1619,44 @@ const styles = StyleSheet.create({
   submitBtnText: {
     color: "#ffffff",
     fontSize: 14,
+    fontWeight: "700",
+  },
+  sortModalContent: {
+    backgroundColor: "#ffffff",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingBottom: Platform.OS === "ios" ? 34 : 24,
+  },
+  sortModalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f1f5f9",
+  },
+  sortModalTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#1e293b",
+  },
+  sortOption: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f8fafc",
+  },
+  sortOptionText: {
+    fontSize: 14,
+    color: "#475569",
+    fontWeight: "500",
+  },
+  activeSortText: {
+    color: "#2563eb",
     fontWeight: "700",
   },
   nestedOverlay: {
@@ -1259,7 +1690,7 @@ const styles = StyleSheet.create({
   nestedTitle: {
     fontSize: 16,
     fontWeight: "800",
-    color: "#0f172a",
+    color: "#1e293b",
   },
   categorySelectItem: {
     paddingVertical: 12,
@@ -1294,4 +1725,84 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 6,
   },
+  scannerModal: {
+    flex: 1,
+    backgroundColor: "#000000",
+  },
+  scannerOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  scanTargetBox: {
+    width: 250,
+    height: 250,
+    borderWidth: 2,
+    borderColor: "rgba(255, 255, 255, 0.4)",
+    backgroundColor: "transparent",
+    position: "relative",
+  },
+  targetCornerTL: {
+    position: "absolute",
+    top: -2,
+    left: -2,
+    width: 20,
+    height: 20,
+    borderTopWidth: 4,
+    borderLeftWidth: 4,
+    borderColor: "#2563eb",
+  },
+  targetCornerTR: {
+    position: "absolute",
+    top: -2,
+    right: -2,
+    width: 20,
+    height: 20,
+    borderTopWidth: 4,
+    borderRightWidth: 4,
+    borderColor: "#2563eb",
+  },
+  targetCornerBL: {
+    position: "absolute",
+    bottom: -2,
+    left: -2,
+    width: 20,
+    height: 20,
+    borderBottomWidth: 4,
+    borderLeftWidth: 4,
+    borderColor: "#2563eb",
+  },
+  targetCornerBR: {
+    position: "absolute",
+    bottom: -2,
+    right: -2,
+    width: 20,
+    height: 20,
+    borderBottomWidth: 4,
+    borderRightWidth: 4,
+    borderColor: "#2563eb",
+  },
+  scannerGuideText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "600",
+    marginTop: 24,
+    textAlign: "center",
+  },
+  closeScannerBtn: {
+    position: "absolute",
+    bottom: 48,
+    alignSelf: "center",
+  },
+  inputError: {
+    borderColor: "#ef4444",
+  },
+  fieldErrorText: {
+    color: "#ef4444",
+    fontSize: 11,
+    marginTop: 4,
+    fontWeight: "500",
+  },
 });
+

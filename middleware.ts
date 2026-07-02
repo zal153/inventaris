@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { jwtVerify } from 'jose';
 
+if (!process.env.JWT_SECRET) {
+	if (process.env.NODE_ENV === 'production') {
+		throw new Error('CRITICAL: JWT_SECRET environment variable is missing!');
+	} else {
+		console.warn('WARNING: JWT_SECRET is missing. Falling back to default insecure key for development.');
+	}
+}
+
 const SECRET_KEY = new TextEncoder().encode(
 	process.env.JWT_SECRET || 'stocksync-offline-secret-key-2024-very-secure',
 );
