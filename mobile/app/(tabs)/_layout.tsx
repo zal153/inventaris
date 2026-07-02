@@ -33,9 +33,21 @@ export default function TabLayout() {
           paddingBottom: Platform.OS === 'ios' ? 28 : 12,
           paddingTop: 10,
         },
+        tabBarItemStyle: {
+          flex: 1,
+          justifyContent: 'center',
+          alignItems: 'center',
+          paddingVertical: 4,
+        },
+        tabBarIconStyle: {
+          marginBottom: 2,
+        },
         tabBarLabelStyle: {
-          fontSize: 11,
+          fontSize: 10,
           fontWeight: '600',
+          width: '100%',
+          textAlign: 'center',
+          margin: 0,
         },
       }}>
       <Tabs.Screen
