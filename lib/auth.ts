@@ -80,3 +80,29 @@ export async function getSessionUser() {
   if (!user || !user.isActive) return null;
   return user;
 }
+
+// ── Get Mobile User from Bearer Token ──────────────────
+export async function getMobileUser(request: any) {
+  const authHeader = request.headers.get("authorization");
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return null;
+  }
+
+  const token = authHeader.substring(7); // "Bearer " is 7 characters
+  const payload = await verifyToken(token);
+  if (!payload) return null;
+
+  const user = await prisma.user.findUnique({
+    where: { id: payload.userId },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      isActive: true,
+    },
+  });
+
+  if (!user || !user.isActive) return null;
+  return user;
+}

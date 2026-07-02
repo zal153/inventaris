@@ -2,13 +2,14 @@ import { utils, write, writeFile } from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-
 // ── Export to Excel ──────────────────────────────────
 export function exportToExcel(data: any[], fileName: string) {
   try {
     const worksheet = utils.json_to_sheet(data);
     const workbook = utils.book_new();
     utils.book_append_sheet(workbook, worksheet, "Sheet1");
+
+    // Browser download
     writeFile(workbook, `${fileName}.xlsx`);
   } catch (error) {
     console.error("Error exporting to Excel:", error);
@@ -56,7 +57,7 @@ export function exportToPDF(
       margin: { top: 20, left: 14, right: 14 },
     });
 
-    // Save
+    // Browser download
     doc.save(`${fileName}.pdf`);
   } catch (error) {
     console.error("Error exporting to PDF:", error);
