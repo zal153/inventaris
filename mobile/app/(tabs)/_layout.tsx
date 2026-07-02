@@ -1,13 +1,18 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
-import { Platform } from 'react-native';
 import { LayoutDashboard, Package, ArrowUpDown, History } from 'lucide-react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
+  const insets = useSafeAreaInsets();
   const activeColor = '#2563eb'; // Blue 600
   const inactiveColor = colorScheme === 'dark' ? '#94a3b8' : '#64748b';
+
+  // Hitung tinggi dan padding bawah secara dinamis berdasarkan safe area inset
+  const bottomPadding = insets.bottom > 0 ? insets.bottom : 8;
+  const tabHeight = 52 + bottomPadding;
 
   return (
     <Tabs
@@ -29,8 +34,8 @@ export default function TabLayout() {
           backgroundColor: colorScheme === 'dark' ? '#0f172a' : '#ffffff',
           borderTopWidth: 1,
           borderTopColor: colorScheme === 'dark' ? '#1e293b' : '#e2e8f0',
-          height: Platform.OS === 'ios' ? 88 : 64,
-          paddingBottom: Platform.OS === 'ios' ? 28 : 8,
+          height: tabHeight,
+          paddingBottom: bottomPadding,
           paddingTop: 8,
         },
         tabBarLabelStyle: {
