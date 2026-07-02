@@ -1,5 +1,5 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack, useRouter, useSegments } from 'expo-router';
+import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect } from 'react';
 import { ActivityIndicator, View } from 'react-native';
@@ -14,23 +14,7 @@ export const unstable_settings = {
 
 function RootLayoutNav() {
   const { token, isLoading } = useAuth();
-  const segments = useSegments();
-  const router = useRouter();
   const colorScheme = useColorScheme();
-
-  useEffect(() => {
-    if (isLoading) return;
-
-    const inAuthGroup = segments[0] === 'login';
-
-    if (!token && !inAuthGroup) {
-      // Redirect to login screen
-      router.replace('/login');
-    } else if (token && inAuthGroup) {
-      // Redirect to main tabs
-      router.replace('/(tabs)');
-    }
-  }, [token, isLoading, segments]);
 
   if (isLoading) {
     return (
@@ -42,10 +26,15 @@ function RootLayoutNav() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="login" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Detail Barang' }} />
+      <Stack screenOptions={{ headerShown: false }}>
+        {!token ? (
+          <Stack.Screen name="login" />
+        ) : (
+          <>
+            <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Detail Barang', headerShown: true }} />
+          </>
+        )}
       </Stack>
       <StatusBar style="auto" />
     </ThemeProvider>

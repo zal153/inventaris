@@ -9,17 +9,44 @@ import {
   ActivityIndicator,
   Platform,
   TouchableOpacity,
+  Alert,
+  Modal,
+  ScrollView,
 } from "react-native";
-import { API_URL } from "../../context/AuthContext";
-import { Search, Package, AlertTriangle, Eye, Info } from "lucide-react-native";
+import { useAuth, API_URL } from "../../context/AuthContext";
+import { Search, Package, AlertTriangle, Eye, Info, Plus, Edit, Trash2, X, Save } from "lucide-react-native";
 import axios from "axios";
 
 export default function ProductsScreen() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "ADMIN";
+
   const [products, setProducts] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
+
+  // Form states
+  const [categories, setCategories] = useState<any[]>([]);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const [productId, setProductId] = useState("");
+  const [kodeBarang, setKodeBarang] = useState("");
+  const [namaBarang, setNamaBarang] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [categoryName, setCategoryName] = useState("");
+  const [satuan, setSatuan] = useState("pcs");
+  const [hargaBeli, setHargaBeli] = useState("0");
+  const [hargaJual, setHargaJual] = useState("0");
+  const [stok, setStok] = useState("0");
+  const [minimumStok, setMinimumStok] = useState("5");
+  const [stokIdeal, setStokIdeal] = useState("20");
+  const [barcode, setBarcode] = useState("");
+  const [deskripsi, setDeskripsi] = useState("");
 
   const fetchProducts = useCallback(async (query = "") => {
     try {
@@ -35,9 +62,21 @@ export default function ProductsScreen() {
     }
   }, []);
 
+  const fetchCategories = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API_URL}/categories`);
+      if (res.data.success) {
+        setCategories(res.data.categories || []);
+      }
+    } catch (err) {
+      console.error("Gagal memuat kategori:", err);
+    }
+  }, []);
+
   useEffect(() => {
     fetchProducts();
-  }, [fetchProducts]);
+    fetchCategories();
+  }, [fetchProducts, fetchCategories]);
 
   // Handle live search
   const handleSearch = (text: string) => {
@@ -49,6 +88,124 @@ export default function ProductsScreen() {
   const onRefresh = () => {
     setRefreshing(true);
     fetchProducts(searchQuery);
+  };
+
+  const openAddModal = () => {
+    setIsEditing(false);
+    setProductId("");
+    setKodeBarang("");
+    setNamaBarang("");
+    setCategoryId(categories[0]?.id || "");
+    setCategoryName(categories[0]?.name || "Pilih Kategori");
+    setSatuan("pcs");
+    setHargaBeli("0");
+    setHargaJual("0");
+    setStok("0");
+    setMinimumStok("5");
+    setStokIdeal("20");
+    setBarcode("");
+    setDeskripsi("");
+    setModalVisible(true);
+  };
+
+  const openEditModal = (item: any) => {
+    setIsEditing(true);
+    setProductId(item.id);
+    setKodeBarang(item.kodeBarang);
+    setNamaBarang(item.namaBarang);
+    setCategoryId(item.categoryId);
+    setCategoryName(item.category?.name || "Pilih Kategori");
+    setSatuan(item.satuan || "pcs");
+    setHargaBeli(String(item.hargaBeli || 0));
+    setHargaJual(String(item.hargaJual || 0));
+    setStok(String(item.stok || 0));
+    setMinimumStok(String(item.minimumStok || 5));
+    setStokIdeal(String(item.stokIdeal || 20));
+    setBarcode(item.barcode || "");
+    setDeskripsi(item.deskripsi || "");
+    setModalVisible(true);
+  };
+
+  const handleDeleteProduct = (id: string, name: string) => {
+    Alert.alert(
+      "Hapus Barang",
+      `Apakah Anda yakin ingin menghapus barang "${name}"?`,
+      [
+        { text: "Batal", style: "cancel" },
+        {
+          text: "Hapus",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const res = await axios.delete(`${API_URL}/products/${id}`);
+              if (res.data.success) {
+                Alert.alert("Sukses", "Barang berhasil dihapus");
+                fetchProducts(searchQuery);
+              }
+            } catch (err: any) {
+              console.error("Gagal menghapus barang:", err);
+              const errMsg = err.response?.data?.message || "Gagal menghapus barang";
+              Alert.alert("Error", errMsg);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleSaveProduct = async () => {
+    if (!kodeBarang.trim()) {
+      Alert.alert("Validasi Gagal", "Kode barang wajib diisi");
+      return;
+    }
+    if (!namaBarang.trim()) {
+      Alert.alert("Validasi Gagal", "Nama barang wajib diisi");
+      return;
+    }
+    if (!categoryId) {
+      Alert.alert("Validasi Gagal", "Kategori wajib dipilih");
+      return;
+    }
+    if (!satuan.trim()) {
+      Alert.alert("Validasi Gagal", "Satuan wajib diisi");
+      return;
+    }
+
+    const payload = {
+      kodeBarang: kodeBarang.trim(),
+      namaBarang: namaBarang.trim(),
+      categoryId,
+      satuan: satuan.trim(),
+      hargaBeli: Number(hargaBeli) || 0,
+      hargaJual: Number(hargaJual) || 0,
+      stok: Number(stok) || 0,
+      minimumStok: Number(minimumStok) || 0,
+      stokIdeal: Number(stokIdeal) || 0,
+      barcode: barcode.trim() || null,
+      deskripsi: deskripsi.trim() || null,
+    };
+
+    setIsSubmitting(true);
+    try {
+      let res;
+      if (isEditing) {
+        res = await axios.put(`${API_URL}/products/${productId}`, payload);
+      } else {
+        res = await axios.post(`${API_URL}/products`, payload);
+      }
+
+      if (res.data.success) {
+        Alert.alert("Sukses", isEditing ? "Barang berhasil diperbarui" : "Barang berhasil ditambahkan");
+        setModalVisible(false);
+        fetchProducts(searchQuery);
+      }
+    } catch (err: any) {
+      console.error("Gagal menyimpan barang:", err);
+      const errMsg = err.response?.data?.message || "Terjadi kesalahan pada server";
+      Alert.alert("Error", errMsg);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const formatRupiah = (val: number) => {
@@ -125,6 +282,25 @@ export default function ProductsScreen() {
                 <Text style={[styles.expandedVal, { marginTop: 2, color: "#64748b" }]}>{item.deskripsi}</Text>
               </View>
             )}
+
+            {isAdmin && (
+              <View style={styles.actionRow}>
+                <TouchableOpacity 
+                  style={[styles.actionBtn, styles.editBtn]} 
+                  onPress={() => openEditModal(item)}
+                >
+                  <Edit size={14} color="#2563eb" style={{ marginRight: 6 }} />
+                  <Text style={styles.editBtnText}>Edit</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.actionBtn, styles.deleteBtn]} 
+                  onPress={() => handleDeleteProduct(item.id, item.namaBarang)}
+                >
+                  <Trash2 size={14} color="#ef4444" style={{ marginRight: 6 }} />
+                  <Text style={styles.deleteBtnText}>Hapus</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         )}
 
@@ -176,6 +352,255 @@ export default function ProductsScreen() {
             </View>
           }
         />
+      )}
+
+      {/* ─── ADD/EDIT BARANG MODAL ─── */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={modalVisible}
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>
+                {isEditing ? "Edit Barang" : "Tambah Barang Baru"}
+              </Text>
+              <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.closeBtn}>
+                <X size={20} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView contentContainerStyle={styles.formContainer} keyboardShouldPersistTaps="handled">
+              {/* Kode Barang */}
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Kode Barang *</Text>
+                <TextInput
+                  style={[styles.formInput, isEditing && styles.disabledInput]}
+                  value={kodeBarang}
+                  onChangeText={setKodeBarang}
+                  placeholder="E.g., BRG-001"
+                  placeholderTextColor="#94a3b8"
+                  editable={!isEditing && !isSubmitting}
+                />
+              </View>
+
+              {/* Nama Barang */}
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Nama Barang *</Text>
+                <TextInput
+                  style={styles.formInput}
+                  value={namaBarang}
+                  onChangeText={setNamaBarang}
+                  placeholder="E.g., Bawang Merah 100gr"
+                  placeholderTextColor="#94a3b8"
+                  editable={!isSubmitting}
+                />
+              </View>
+
+              {/* Kategori Selector */}
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Kategori *</Text>
+                <TouchableOpacity
+                  style={styles.selectTrigger}
+                  onPress={() => setShowCategoryModal(true)}
+                  disabled={isSubmitting}
+                >
+                  <Text style={styles.selectTriggerText}>{categoryName}</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Satuan */}
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Satuan *</Text>
+                <TextInput
+                  style={styles.formInput}
+                  value={satuan}
+                  onChangeText={setSatuan}
+                  placeholder="E.g., pcs, Kg, Karton"
+                  placeholderTextColor="#94a3b8"
+                  editable={!isSubmitting}
+                />
+              </View>
+
+              {/* Barcode */}
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Barcode</Text>
+                <TextInput
+                  style={styles.formInput}
+                  value={barcode}
+                  onChangeText={setBarcode}
+                  placeholder="E.g., 899123456789"
+                  placeholderTextColor="#94a3b8"
+                  editable={!isSubmitting}
+                />
+              </View>
+
+              {/* Harga Beli & Harga Jual */}
+              <View style={styles.formRow}>
+                <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
+                  <Text style={styles.formLabel}>Harga Beli</Text>
+                  <TextInput
+                    style={styles.formInput}
+                    value={hargaBeli}
+                    onChangeText={setHargaBeli}
+                    keyboardType="numeric"
+                    placeholder="0"
+                    placeholderTextColor="#94a3b8"
+                    editable={!isSubmitting}
+                  />
+                </View>
+                <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
+                  <Text style={styles.formLabel}>Harga Jual</Text>
+                  <TextInput
+                    style={styles.formInput}
+                    value={hargaJual}
+                    onChangeText={setHargaJual}
+                    keyboardType="numeric"
+                    placeholder="0"
+                    placeholderTextColor="#94a3b8"
+                    editable={!isSubmitting}
+                  />
+                </View>
+              </View>
+
+              {/* Stok & Minimum Stok */}
+              <View style={styles.formRow}>
+                <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
+                  <Text style={styles.formLabel}>Stok Awal</Text>
+                  <TextInput
+                    style={[styles.formInput, isEditing && styles.disabledInput]}
+                    value={stok}
+                    onChangeText={setStok}
+                    keyboardType="numeric"
+                    placeholder="0"
+                    placeholderTextColor="#94a3b8"
+                    editable={!isEditing && !isSubmitting}
+                  />
+                </View>
+                <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
+                  <Text style={styles.formLabel}>Minimum Stok</Text>
+                  <TextInput
+                    style={styles.formInput}
+                    value={minimumStok}
+                    onChangeText={setMinimumStok}
+                    keyboardType="numeric"
+                    placeholder="5"
+                    placeholderTextColor="#94a3b8"
+                    editable={!isSubmitting}
+                  />
+                </View>
+              </View>
+
+              {/* Stok Ideal */}
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Stok Ideal</Text>
+                <TextInput
+                  style={styles.formInput}
+                  value={stokIdeal}
+                  onChangeText={setStokIdeal}
+                  keyboardType="numeric"
+                  placeholder="20"
+                  placeholderTextColor="#94a3b8"
+                  editable={!isSubmitting}
+                />
+              </View>
+
+              {/* Deskripsi */}
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Deskripsi</Text>
+                <TextInput
+                  style={[styles.formInput, { height: 80, textAlignVertical: "top" }]}
+                  value={deskripsi}
+                  onChangeText={setDeskripsi}
+                  placeholder="Tambahkan catatan/deskripsi barang..."
+                  placeholderTextColor="#94a3b8"
+                  multiline={true}
+                  numberOfLines={3}
+                  editable={!isSubmitting}
+                />
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => setModalVisible(false)}
+                disabled={isSubmitting}
+              >
+                <Text style={styles.cancelBtnText}>Batal</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.submitBtn}
+                onPress={handleSaveProduct}
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <Save size={16} color="#fff" style={{ marginRight: 6 }} />
+                    <Text style={styles.submitBtnText}>Simpan</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ─── NESTED CATEGORY SELECTION MODAL ─── */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={showCategoryModal}
+        onRequestClose={() => setShowCategoryModal(false)}
+      >
+        <View style={styles.nestedOverlay}>
+          <View style={styles.nestedContent}>
+            <View style={styles.nestedHeader}>
+              <Text style={styles.nestedTitle}>Pilih Kategori</Text>
+              <TouchableOpacity onPress={() => setShowCategoryModal(false)}>
+                <X size={20} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={categories}
+              keyExtractor={(cat) => cat.id}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.categorySelectItem,
+                    categoryId === item.id && styles.activeCategorySelect,
+                  ]}
+                  onPress={() => {
+                    setCategoryId(item.id);
+                    setCategoryName(item.name);
+                    setShowCategoryModal(false);
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.categorySelectText,
+                      categoryId === item.id && styles.activeCategorySelectText,
+                    ]}
+                  >
+                    {item.name}
+                  </Text>
+                </TouchableOpacity>
+              )}
+              contentContainerStyle={{ paddingVertical: 8 }}
+            />
+          </View>
+        </View>
+      </Modal>
+
+      {/* ─── FLOATING ACTION BUTTON (ADMIN ONLY) ─── */}
+      {isAdmin && (
+        <TouchableOpacity style={styles.fabBtn} onPress={openAddModal}>
+          <Plus size={24} color="#fff" />
+        </TouchableOpacity>
       )}
     </View>
   );
@@ -382,5 +807,216 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#94a3b8",
     marginTop: 4,
+  },
+  actionRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: "#f1f5f9",
+    paddingTop: 12,
+  },
+  actionBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  editBtn: {
+    borderColor: "#bfdbfe",
+    backgroundColor: "#eff6ff",
+    marginRight: 6,
+  },
+  editBtnText: {
+    color: "#2563eb",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  deleteBtn: {
+    borderColor: "#fecaca",
+    backgroundColor: "#fef2f2",
+    marginLeft: 6,
+  },
+  deleteBtnText: {
+    color: "#ef4444",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.6)",
+    justifyContent: "flex-end",
+  },
+  modalContent: {
+    backgroundColor: "#ffffff",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: "90%",
+    paddingBottom: Platform.OS === "ios" ? 34 : 20,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f1f5f9",
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#0f172a",
+  },
+  closeBtn: {
+    padding: 4,
+  },
+  formContainer: {
+    padding: 20,
+  },
+  formGroup: {
+    marginBottom: 16,
+  },
+  formLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#475569",
+    marginBottom: 6,
+  },
+  formInput: {
+    backgroundColor: "#f8fafc",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    height: 44,
+    fontSize: 14,
+    color: "#0f172a",
+  },
+  disabledInput: {
+    backgroundColor: "#e2e8f0",
+    color: "#64748b",
+  },
+  formRow: {
+    flexDirection: "row",
+  },
+  selectTrigger: {
+    backgroundColor: "#f8fafc",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    height: 44,
+    justifyContent: "center",
+  },
+  selectTriggerText: {
+    fontSize: 14,
+    color: "#0f172a",
+  },
+  modalFooter: {
+    flexDirection: "row",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#f1f5f9",
+  },
+  cancelBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 6,
+  },
+  cancelBtnText: {
+    color: "#475569",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  submitBtn: {
+    flex: 2,
+    height: 44,
+    backgroundColor: "#2563eb",
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    marginLeft: 6,
+  },
+  submitBtnText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  nestedOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.4)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 32,
+  },
+  nestedContent: {
+    width: "100%",
+    backgroundColor: "#ffffff",
+    borderRadius: 16,
+    padding: 16,
+    maxHeight: "70%",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  nestedHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    borderBottomWidth: 1,
+    borderBottomColor: "#f1f5f9",
+    paddingBottom: 10,
+    marginBottom: 8,
+  },
+  nestedTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#0f172a",
+  },
+  categorySelectItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginVertical: 2,
+  },
+  activeCategorySelect: {
+    backgroundColor: "#eff6ff",
+  },
+  categorySelectText: {
+    fontSize: 14,
+    color: "#475569",
+  },
+  activeCategorySelectText: {
+    color: "#2563eb",
+    fontWeight: "700",
+  },
+  fabBtn: {
+    position: "absolute",
+    bottom: 24,
+    right: 24,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#2563eb",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#2563eb",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
 });

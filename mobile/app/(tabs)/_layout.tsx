@@ -1,5 +1,6 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
+import { Platform } from 'react-native';
 import { LayoutDashboard, Package, ArrowUpDown, History } from 'lucide-react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
@@ -28,9 +29,9 @@ export default function TabLayout() {
           backgroundColor: colorScheme === 'dark' ? '#0f172a' : '#ffffff',
           borderTopWidth: 1,
           borderTopColor: colorScheme === 'dark' ? '#1e293b' : '#e2e8f0',
-          height: 60,
-          paddingBottom: 8,
-          paddingTop: 8,
+          height: Platform.OS === 'ios' ? 88 : 72,
+          paddingBottom: Platform.OS === 'ios' ? 28 : 12,
+          paddingTop: 10,
         },
         tabBarLabelStyle: {
           fontSize: 11,

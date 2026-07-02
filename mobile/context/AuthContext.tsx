@@ -35,9 +35,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (storedToken && storedUser) {
           setToken(storedToken);
           setUser(JSON.parse(storedUser));
-          
-          // Konfigurasi axios default header
-          axios.defaults.headers.common["Authorization"] = `Bearer ${storedToken}`;
         }
       } catch (e) {
         console.error("Gagal memuat sesi auth:", e);
@@ -49,6 +46,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     loadStorageData();
   }, []);
 
+  // Setup Axios Interceptors untuk menyisipkan Token & logout otomatis jika 401
+  useEffect(() => {
+    const requestInterceptor = axios.interceptors.request.use(
+      async (config) => {
+        const storedToken = await SecureStore.getItemAsync("user-token");
+        if (storedToken) {
+          config.headers.Authorization = `Bearer ${storedToken}`;
+        }
+        return config;
+      },
+      (error) => {
+        return Promise.reject(error);
+      }
+    );
+
+    const responseInterceptor = axios.interceptors.response.use(
+      (response) => response,
+      async (error) => {
+        if (error.response && error.response.status === 401) {
+          // Token tidak valid atau kadaluarsa di server -> logout otomatis
+          console.log("[Auth] Sesi kadaluarsa (401), mengeluarkan user...");
+          await SecureStore.deleteItemAsync("user-token");
+          await SecureStore.deleteItemAsync("user-data");
+          setToken(null);
+          setUser(null);
+        }
+        return Promise.reject(error);
+      }
+    );
+
+    return () => {
+      axios.interceptors.request.eject(requestInterceptor);
+      axios.interceptors.response.eject(responseInterceptor);
+    };
+  }, []);
+
   const login = async (newToken: string, userData: any) => {
     try {
       await SecureStore.setItemAsync("user-token", newToken);
@@ -56,8 +89,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       setToken(newToken);
       setUser(userData);
-      
-      axios.defaults.headers.common["Authorization"] = `Bearer ${newToken}`;
     } catch (e) {
       console.error("Gagal menyimpan sesi auth:", e);
       throw e;
@@ -71,8 +102,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       setToken(null);
       setUser(null);
-      
-      delete axios.defaults.headers.common["Authorization"];
     } catch (e) {
       console.error("Gagal menghapus sesi auth:", e);
     }
