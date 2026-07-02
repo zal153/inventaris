@@ -270,6 +270,7 @@ export default function ProductsScreen() {
         <html>
         <head>
           <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
           <title>Laporan Stok Barang</title>
           <style>
             body {
@@ -294,21 +295,22 @@ export default function ProductsScreen() {
               color: #64748b;
               margin-top: 5px;
             }
-            .stats-container {
-              display: flex;
-              justify-content: space-between;
+            .stats-table {
+              width: 100%;
+              border-collapse: collapse;
               margin-bottom: 20px;
               background-color: #f8fafc;
               border: 1px solid #e2e8f0;
               border-radius: 8px;
-              padding: 15px;
             }
-            .stat-box {
+            .stats-table td {
+              border: none !important;
+              padding: 15px 10px;
               text-align: center;
-              flex: 1;
+              width: 25%;
             }
-            .stat-box:not(:last-child) {
-              border-right: 1px solid #cbd5e1;
+            .stats-table td:not(:last-child) {
+              border-right: 1px solid #cbd5e1 !important;
             }
             .stat-val {
               font-size: 18px;
@@ -321,24 +323,24 @@ export default function ProductsScreen() {
               text-transform: uppercase;
               margin-top: 4px;
             }
-            table {
+            .data-table {
               width: 100%;
               border-collapse: collapse;
               margin-top: 10px;
               font-size: 11px;
             }
-            th, td {
+            .data-table th, .data-table td {
               border: 1px solid #cbd5e1;
               padding: 8px 10px;
               text-align: left;
             }
-            th {
+            .data-table th {
               background-color: #2563eb;
               color: #ffffff;
               font-weight: bold;
               text-transform: uppercase;
             }
-            tr:nth-child(even) {
+            .data-table tr:nth-child(even) {
               background-color: #f8fafc;
             }
             .footer {
@@ -357,26 +359,28 @@ export default function ProductsScreen() {
             <div class="subtitle">Dicetak pada: ${dateStr} | Sistem StockSync</div>
           </div>
 
-          <div class="stats-container">
-            <div class="stat-box">
-              <div class="stat-val">${totalBarang}</div>
-              <div class="stat-label">Jenis Barang</div>
-            </div>
-            <div class="stat-box">
-              <div class="stat-val">${totalStok}</div>
-              <div class="stat-label">Total Stok Fisik</div>
-            </div>
-            <div class="stat-box">
-              <div class="stat-val" style="color: #d97706;">${stokMenipis}</div>
-              <div class="stat-label">Stok Menipis</div>
-            </div>
-            <div class="stat-box">
-              <div class="stat-val" style="color: #ef4444;">${stokHabis}</div>
-              <div class="stat-label">Stok Habis</div>
-            </div>
-          </div>
+          <table class="stats-table">
+            <tr>
+              <td>
+                <div class="stat-val">${totalBarang}</div>
+                <div class="stat-label">Jenis Barang</div>
+              </td>
+              <td>
+                <div class="stat-val">${totalStok}</div>
+                <div class="stat-label">Total Stok Fisik</div>
+              </td>
+              <td>
+                <div class="stat-val" style="color: #d97706;">${stokMenipis}</div>
+                <div class="stat-label" style="color: #d97706;">Stok Menipis</div>
+              </td>
+              <td>
+                <div class="stat-val" style="color: #ef4444;">${stokHabis}</div>
+                <div class="stat-label" style="color: #ef4444;">Stok Habis</div>
+              </td>
+            </tr>
+          </table>
 
-          <table>
+          <table class="data-table">
             <thead>
               <tr>
                 <th style="width: 5%; text-align: center;">No</th>
@@ -411,9 +415,12 @@ export default function ProductsScreen() {
         UTI: "com.adobe.pdf",
       });
 
-    } catch (err) {
+    } catch (err: any) {
       console.error("Gagal export PDF:", err);
-      Alert.alert("Error", "Gagal mengekspor laporan ke PDF");
+      Alert.alert(
+        "Error",
+        "Gagal mengekspor laporan ke PDF: " + (err?.message || String(err))
+      );
     } finally {
       setIsExporting(false);
     }
